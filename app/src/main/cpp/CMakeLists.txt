@@ -43,6 +43,13 @@ if(EXISTS ${LLAMA_DIR}/CMakeLists.txt)
     add_subdirectory(${LLAMA_DIR} llama-build EXCLUDE_FROM_ALL)
     add_library(llamajni SHARED llama_jni.cpp)
     target_link_libraries(llamajni llama ${log-lib})
+    # ggml-vulkan compiles <vulkan/vulkan.hpp> — the NDK ships only the C
+    # headers. CI provides a consistent vulkan.h+vulkan.hpp pair from the
+    # Vulkan SDK in an isolated dir; prepended so the pair stays matched.
+    if(TARGET ggml-vulkan AND OPENCHAT_VK_INCLUDE AND EXISTS ${OPENCHAT_VK_INCLUDE}/vulkan/vulkan.hpp)
+        target_include_directories(ggml-vulkan BEFORE PRIVATE ${OPENCHAT_VK_INCLUDE})
+        message(STATUS "OpenChat native: Vulkan-Hpp headers from ${OPENCHAT_VK_INCLUDE}")
+    endif()
 else()
     add_library(llamajni SHARED llama_jni_stub.cpp)
     target_link_libraries(llamajni ${log-lib})

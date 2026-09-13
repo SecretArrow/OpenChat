@@ -47,6 +47,10 @@ android {
                 if (spDir != null && !spDir.isEmpty()) {
                     arguments "-DSPIRV-Headers_DIR=${spDir}"
                 }
+                def vkInc = System.getenv('OPENCHAT_VK_INCLUDE')
+                if (vkInc != null && !vkInc.isEmpty()) {
+                    arguments "-DOPENCHAT_VK_INCLUDE=${vkInc}"
+                }
             }
         }
     }

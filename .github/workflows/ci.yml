@@ -39,6 +39,17 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq vulkan-sdk
           glslc --version | head -1
+          # ggml-vulkan includes <vulkan/vulkan.hpp> (Vulkan-Hpp C++ bindings)
+          # which the NDK does not ship. The LunarG SDK headers are a
+          # consistent vulkan.h+vulkan.hpp pair; copy them into an isolated
+          # include dir (host /usr/include itself must NOT leak into the
+          # cross build) and forward the path to gradle→CMake.
+          VKHPP="$(find /usr -name vulkan.hpp -path '*vulkan*' 2>/dev/null | head -1)"
+          test -n "$VKHPP"
+          mkdir -p /tmp/vk-include
+          cp -r "$(dirname "$VKHPP")" /tmp/vk-include/vulkan
+          test -f /tmp/vk-include/vulkan/vulkan.hpp
+          echo "OPENCHAT_VK_INCLUDE=/tmp/vk-include" >> "$GITHUB_ENV"
           # ggml-vulkan needs the SPIRV-Headers CMake config package. Host
           # prefixes are invisible to the NDK cross-configure (root-path
           # filtering), so provide a pinned Khronos install explicitly.
