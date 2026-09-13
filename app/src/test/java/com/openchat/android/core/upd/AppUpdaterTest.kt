@@ -43,7 +43,9 @@ class AppUpdaterTest {
         assertFalse(AppUpdater.isNewer("", "0.1.3"))
         assertFalse(AppUpdater.isNewer("vX.Y.Z", "0.1.3"))
         assertFalse(AppUpdater.isNewer("v0.1.4", ""))
-        assertFalse(AppUpdater.isNewer("v0.1.4-beta", "0.1.3")) // prerelease tag of 0.1.4 still newer
+        // GitHub /releases/latest never returns prereleases, but the compare
+        // treats "v0.1.4-beta" as 0.1.4 — which IS newer than 0.1.3.
+        assertTrue(AppUpdater.isNewer("v0.1.4-beta", "0.1.3"))
     }
 
     // -------------------------------------------------------------- pickAsset
@@ -84,7 +86,8 @@ class AppUpdaterTest {
 
     @Test
     fun `human sizes formatted`() {
-        assertEquals("29.9 MB", AppUpdater.humanSize(29_928_044L))
+        // Binary units: 29_928_044 / 1_048_576 = 28.5359… → "28.5 MB"
+        assertEquals("28.5 MB", AppUpdater.humanSize(29_928_044L))
         assertEquals("512 B", AppUpdater.humanSize(512L))
         assertEquals("2 KB", AppUpdater.humanSize(2048L))
     }
