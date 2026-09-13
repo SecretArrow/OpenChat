@@ -234,12 +234,12 @@ fun FilesScreen() {
                 }
                 r.fold(
                     { e ->
-                        Toast.makeText(context, "Imported ${e.name}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Uploaded ${e.name}", Toast.LENGTH_SHORT).show()
                         refresh++
                     },
                     {
                         Toast.makeText(
-                            context, "Import failed: ${it.message}", Toast.LENGTH_LONG
+                            context, "Upload failed: ${it.message}", Toast.LENGTH_LONG
                         ).show()
                     },
                 )
@@ -258,10 +258,10 @@ fun FilesScreen() {
                     AppGraph.files.exportToUri(target.file!!, uri)
                 }
                 r.fold(
-                    { Toast.makeText(context, "Exported", Toast.LENGTH_SHORT).show() },
+                    { Toast.makeText(context, "Downloaded to phone", Toast.LENGTH_SHORT).show() },
                     {
                         Toast.makeText(
-                            context, "Export failed: ${it.message}", Toast.LENGTH_LONG
+                            context, "Download failed: ${it.message}", Toast.LENGTH_LONG
                         ).show()
                     },
                 )
@@ -281,12 +281,12 @@ fun FilesScreen() {
                 }
                 r.fold(
                     { e ->
-                        Toast.makeText(context, "Imported ${e.name} into Workspaces", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Uploaded ${e.name} into Workspaces", Toast.LENGTH_SHORT).show()
                         refresh++
                     },
                     {
                         Toast.makeText(
-                            context, "Import failed: ${it.message}", Toast.LENGTH_LONG
+                            context, "Upload failed: ${it.message}", Toast.LENGTH_LONG
                         ).show()
                     },
                 )
@@ -403,7 +403,7 @@ fun FilesScreen() {
                                     onClick = { paste() },
                                     enabled = PasteBuffer.domain != null,
                                 ) { Text("Paste") }
-                                TextButton(onClick = { importLauncher.launch(arrayOf("*/*")) }) { Text("Import") }
+                                TextButton(onClick = { importLauncher.launch(arrayOf("*/*")) }) { Text("Upload") }
                             }
 
                             if (listError != null) {
@@ -716,7 +716,7 @@ private fun FileRow(
             DropdownMenuItem(text = { Text("Copy") }, onClick = onCopy)
             DropdownMenuItem(text = { Text("Cut") }, onClick = onCut)
             if (!entry.isDir) {
-                DropdownMenuItem(text = { Text("Export…") }, onClick = onExport)
+                DropdownMenuItem(text = { Text("Download to phone…") }, onClick = onExport)
             }
         }
     }
@@ -738,7 +738,7 @@ private fun SharedTabContent(onImport: () -> Unit) {
                 )
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onImport) { Text("Open & Import file") }
+                    OutlinedButton(onClick = onImport) { Text("Upload file from phone") }
                 }
                 Spacer(Modifier.height(10.dp))
                 Surface(

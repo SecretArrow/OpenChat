@@ -2,6 +2,8 @@ package com.openchat.android.ui.chat
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,6 +33,7 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,9 +70,9 @@ import kotlinx.coroutines.launch
  * message list with markdown + tool blocks, streaming state, input row,
  * error surface with retry. Model switching never clears messages.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun ChatScreen() {
+fun ChatScreen(onOpenTerminal: (() -> Unit)? = null) {
     val scope = rememberCoroutineScope()
     val conversations by AppGraph.chat.conversations.collectAsState()
     val activeId by AppGraph.chat.activeId.collectAsState()
@@ -80,6 +83,14 @@ fun ChatScreen() {
     val conv = conversations.firstOrNull { it.id == activeId }
     val messages: List<ChatMessage> = conv?.messages ?: emptyList()
     var input by remember { mutableStateOf("") }
+
+    // Plain-language starter prompts (z.ai-style guidance for non-CLI users).
+    val suggestions = listOf(
+        "List the files in this workspace and explain the project",
+        "Write and run a Python script that builds a small sales report",
+        "Create a Node.js script that counts word frequencies in a text",
+        "Make a bash script that backs up a folder with a timestamp",
+    )
 
     // Ensure there is always an active conversation on first composition.
     LaunchedEffect(Unit) {
@@ -190,7 +201,7 @@ fun ChatScreen() {
                                     AppGraph.chat.setBackend(c.id, next)
                                 }
                             },
-                            label = { Text("OpenCode") },
+                            label = { Text(if (conv?.backend == ChatBackend.OPENCODE) "Agent" else "Chat") },
                             modifier = Modifier.padding(end = 8.dp),
                         )
                     },
@@ -202,6 +213,25 @@ fun ChatScreen() {
                     .padding(pad)
                     .fillMaxSize(),
             ) {
+                if (conv?.backend == ChatBackend.OPENCODE) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Agent mode — the AI runs commands inside the Ubuntu workspace. " +
+                                "Executed steps appear below as tool cards.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (onOpenTerminal != null) {
+                            TextButton(onClick = onOpenTerminal) { Text("Terminal") }
+                        }
+                    }
+                }
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
@@ -224,10 +254,23 @@ fun ChatScreen() {
                                 Spacer(Modifier.size(6.dp))
                                 Text(
                                     "Pick a model above, then send your first prompt. " +
-                                        "Toggle OpenCode to run the agent inside the Ubuntu workspace.",
+                                        "Switch to Agent mode to let the AI run commands " +
+                                        "inside the Ubuntu workspace for you.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.outline,
                                 )
+                                Spacer(Modifier.size(10.dp))
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.padding(horizontal = 12.dp),
+                                ) {
+                                    suggestions.forEach { s ->
+                                        SuggestionChip(
+                                            onClick = { input = s },
+                                            label = { Text(s, style = MaterialTheme.typography.bodySmall) },
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -245,7 +288,14 @@ fun ChatScreen() {
                                     modifier = Modifier.size(18.dp),
                                     strokeWidth = 2.dp,
                                 )
-                                Text("Generating…", style = MaterialTheme.typography.bodySmall)
+                                val agentMode = conv?.backend == ChatBackend.OPENCODE
+                                val steps =
+                                    messages.lastOrNull { it.role == Role.ASSISTANT }?.toolBlocks?.size ?: 0
+                                Text(
+                                    if (agentMode) "Agent working… ($steps step${if (steps == 1) "" else "s"} so far)"
+                                    else "Generating…",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
                                 Spacer(Modifier.weight(1f))
                                 TextButton(onClick = { AppGraph.chat.cancel() }) { Text("Cancel") }
                             }

@@ -100,7 +100,17 @@ fun AppNav() {
             startDestination = Routes.CHAT,
             modifier = Modifier.padding(padding),
         ) {
-            composable(Routes.CHAT) { ChatScreen() }
+            composable(Routes.CHAT) {
+                ChatScreen(
+                    onOpenTerminal = {
+                        nav.navigate(Routes.TERMINAL) {
+                            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                )
+            }
             composable(Routes.TERMINAL) { TerminalScreen() }
             composable(Routes.FILES) { FilesScreen() }
             composable(Routes.SETTINGS) { SettingsHomeScreen(nav) }
