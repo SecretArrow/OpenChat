@@ -1,11 +1,12 @@
 name: Release
 
 on:
-  create:
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag to release (empty = use current ref)'
+        description: 'Existing tag to release (required for manual runs)'
         required: false
 
 permissions:
@@ -20,10 +21,10 @@ jobs:
     name: Build signed per-ABI APKs + SHA256 + GitHub Release
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # create fires for branches too — only run for v* tags or manual dispatch
+    # manual dispatch must provide an explicit tag input
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.ref_type == 'tag' && startsWith(github.ref_name, 'v'))
+      github.event_name == 'push' ||
+      inputs.tag != ''
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,7 +48,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: bash scripts/prepare_signing.sh
 
-      - name: Build release APKs (ABI split: arm64-v8a, armeabi-v7a, x86_64)
+      - name: "Build release APKs (ABI split arm64-v8a / armeabi-v7a / x86_64)"
         run: ./gradlew --no-daemon --parallel --build-cache assembleRelease
 
       - name: Verify APKs + collect release artifacts + SHA256
