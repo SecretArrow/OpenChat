@@ -35,6 +35,7 @@ import com.openchat.android.AppGraph
 import com.openchat.android.core.model.OpenCodeStatus
 import com.openchat.android.ui.components.SectionHeader
 import com.openchat.android.ui.components.StatusPill
+import kotlinx.coroutines.launch
 
 /**
  * OpenCode management (spec §28): install / reinstall / update / check-update
