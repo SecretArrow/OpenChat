@@ -70,10 +70,18 @@ private val bottomItems = listOf(
 )
 
 @Composable
-fun AppNav() {
+fun AppNav(openUpdatesTick: Int = 0) {
     val nav: NavHostController = rememberNavController()
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
+
+    // Update-notification tap (MainActivity extra): land on Settings → About,
+    // where the Updates card offers the per-ABI APK download.
+    androidx.compose.runtime.LaunchedEffect(openUpdatesTick) {
+        if (openUpdatesTick > 0) {
+            runCatching { nav.navigate(Routes.ABOUT) }
+        }
+    }
 
     Scaffold(
         bottomBar = {

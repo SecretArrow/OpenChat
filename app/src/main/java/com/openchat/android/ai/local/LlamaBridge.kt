@@ -21,7 +21,7 @@ object LlamaBridge {
     }
 
     private external fun nativeIsAvailable(): Boolean
-    private external fun nativeLoad(path: String, nCtx: Int, nThreads: Int): Long
+    private external fun nativeLoad(path: String, nCtx: Int, nThreads: Int, nGpuLayers: Int): Long
     private external fun nativeStartCompletion(
         handle: Long,
         roles: Array<String>,
@@ -38,11 +38,15 @@ object LlamaBridge {
         available && runCatching { nativeIsAvailable() }.getOrDefault(false)
 
     /**
-     * Loads a GGUF model with mmap; CPU-only, [nCtx]-token context.
+     * Loads a GGUF model with mmap; [nGpuLayers] > 0 offloads weight layers to
+     * the GPU when the build includes the Vulkan backend AND the device exposes
+     * a Vulkan driver — otherwise the load transparently stays on CPU.
      * @return engine handle (>0), or 0 on failure (bad file / out of memory).
      */
-    fun load(path: String, nCtx: Int, nThreads: Int): Long =
-        if (available) runCatching { nativeLoad(path, nCtx, nThreads) }.getOrDefault(0L) else 0L
+    fun load(path: String, nCtx: Int, nThreads: Int, nGpuLayers: Int = 0): Long =
+        if (available) {
+            runCatching { nativeLoad(path, nCtx, nThreads, nGpuLayers) }.getOrDefault(0L)
+        } else 0L
 
     /**
      * Runs one completion synchronously on the caller thread, streaming pieces

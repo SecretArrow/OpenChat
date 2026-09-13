@@ -21,6 +21,10 @@ import com.openchat.android.ubuntu.UbuntuRuntime
 import com.openchat.android.workspace.FileManagerService
 import com.openchat.android.workspace.WorkspaceManager
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * The single service graph (spec §17): UI talks ONLY to these singletons.
@@ -32,6 +36,9 @@ object AppGraph {
 
     lateinit var appContext: Context
         private set
+
+    /** Graph-wide scope for fire-and-forget wiring (survives as long as the process). */
+    val graphScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     @Volatile
     private var initialized = false
@@ -74,6 +81,17 @@ object AppGraph {
                     RuntimeServiceController.start(appContext)
                 } else if (AppGraph.terminal.sessions.value.isEmpty()) {
                     RuntimeServiceController.stop(appContext)
+                }
+            }
+            // Vulkan offload follows the Local-models GPU setting; the toggle
+            // takes effect on the next model load (honest CPU fallback inside
+            // llama.cpp when the device has no Vulkan driver).
+            engine.gpuLayers =
+                if (settings.settings.value.localGpu) LocalInferenceEngine.GPU_LAYERS_MAX else 0
+            graphScope.launch {
+                settings.settings.collect { s ->
+                    engine.gpuLayers =
+                        if (s.localGpu) LocalInferenceEngine.GPU_LAYERS_MAX else 0
                 }
             }
             // A deleted model must not keep weights resident.

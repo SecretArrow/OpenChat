@@ -11,7 +11,8 @@ Java_com_openchat_android_ai_local_LlamaBridge_nativeIsAvailable(JNIEnv*, jobjec
 }
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_openchat_android_ai_local_LlamaBridge_nativeLoad(JNIEnv*, jobject, jstring, jint, jint) {
+Java_com_openchat_android_ai_local_LlamaBridge_nativeLoad(
+        JNIEnv*, jobject, jstring, jint, jint, jint) {
     return 0;
 }
 

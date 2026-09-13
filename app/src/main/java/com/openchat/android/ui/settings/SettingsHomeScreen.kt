@@ -1,5 +1,8 @@
 package com.openchat.android.ui.settings
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,6 +33,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
@@ -42,6 +46,11 @@ import com.openchat.android.ui.components.StatusPill
 import com.openchat.android.ui.components.formatDate
 import com.openchat.android.ui.nav.Routes
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Settings home (spec §27): live Ubuntu/OpenCode status cards plus entries for
@@ -106,6 +115,9 @@ fun SettingsHomeScreen(nav: NavHostController) {
                 }
             } }
 
+            item { SectionHeader("Backup & restore") }
+            item { BackupCard() }
+
             item { SectionHeader("Configuration") }
             items(rows) { row ->
                 SettingsRow(label = row.first, onClick = { nav.navigate(row.second) })
@@ -132,6 +144,87 @@ fun SettingsHomeScreen(nav: NavHostController) {
             item { Spacer(Modifier.height(24.dp)) }
         }
     }
+}
+
+/**
+ * Chat backup (Settings → Backup & restore): SAF export of every conversation
+ * to a single JSON document, and merge-import from an earlier backup (never
+ * destroys chats already on the device).
+ */
+@Composable
+private fun BackupCard() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                val r = withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.openOutputStream(uri)?.use { os ->
+                            os.write(AppGraph.chat.exportAllJson().toByteArray())
+                        } ?: error("Cannot open destination")
+                    }
+                }
+                r.fold(
+                    { toastStatic("Chats exported") },
+                    { toastStatic("Export failed: ${it.message ?: "unknown error"}") },
+                )
+            }
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                val r = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val text = context.contentResolver.openInputStream(uri)?.use { ins ->
+                            ins.readBytes().decodeToString()
+                        } ?: error("Cannot open file")
+                        AppGraph.chat.importFromJson(text).getOrThrow()
+                    }
+                }
+                r.fold(
+                    { toastStatic("Imported $it conversation${if (it == 1) "" else "s"} (existing chats kept)") },
+                    { toastStatic("Import failed: ${it.message ?: "unknown error"}") },
+                )
+            }
+        }
+    }
+
+    Card(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Chats", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Save every conversation to a JSON file on this phone, or restore " +
+                    "from an earlier backup. Import adds chats — existing ones are " +
+                    "never deleted or overwritten.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date())
+                    exportLauncher.launch("openchat-chats-$stamp.json")
+                }) { Text("Export chats") }
+                OutlinedButton(onClick = {
+                    importLauncher.launch(arrayOf("application/json", "text/*", "*/*"))
+                }) { Text("Import chats") }
+            }
+        }
+    }
+}
+
+private fun toastStatic(msg: String) {
+    android.widget.Toast.makeText(AppGraph.appContext, msg, android.widget.Toast.LENGTH_LONG).show()
 }
 
 /** Live Ubuntu install/runtime status with Install/Repair actions. */

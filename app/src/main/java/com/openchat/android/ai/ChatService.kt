@@ -459,6 +459,28 @@ class ChatService(
         }
     }
 
+    // ------------------------------------------------------------------ backup
+
+    /** Full chat backup as a single JSON document (Settings → Backup & restore). */
+    fun exportAllJson(): String = ChatBackup.toJson(conversationsState.value).toString()
+
+    /**
+     * Merges conversations from a backup document. Conversations already on
+     * device (same id) are skipped — import never destroys local data.
+     * @return number of conversations added.
+     */
+    fun importFromJson(text: String): Result<Int> =
+        ChatBackup.parse(text).map { incoming ->
+            val existing = conversationsState.value.map { it.id }.toHashSet()
+            val fresh = incoming.filter { it.id !in existing }
+            if (fresh.isNotEmpty()) {
+                conversationsState.update { it + fresh }
+                fresh.forEach { persistConversation(it) }
+                persistIndex()
+            }
+            fresh.size
+        }
+
     // ------------------------------------------------------------------ persistence
 
     private fun persistConversation(c: Conversation) {

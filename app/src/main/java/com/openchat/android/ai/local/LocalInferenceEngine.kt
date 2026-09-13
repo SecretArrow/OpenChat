@@ -32,9 +32,10 @@ sealed class LocalEngineState {
  *  - cancellation is cooperative: Kotlin raises it inside the token callback,
  *    the native loop unwinds cleanly, partial content is kept
  *
- * Architecture support: arm64-v8a, armeabi-v7a, x86_64 (CPU, mmap). Lifecycle
- * support: Application#onTrimMemory → [onTrimMemory]; generation activity →
- * AppGraph starts/stops RuntimeForegroundService.
+ * Architecture support: arm64-v8a, armeabi-v7a, x86_64 (CPU, mmap); Vulkan GPU
+ * offload when the build ships the backend and the device has a driver.
+ * Lifecycle support: Application#onTrimMemory → [onTrimMemory]; generation
+ * activity → AppGraph starts/stops RuntimeForegroundService.
  */
 class LocalInferenceEngine(
     @Suppress("unused") private val context: Context,
@@ -51,6 +52,15 @@ class LocalInferenceEngine(
 
     /** AppGraph hook: protect the process while generating (spec §14/§25). */
     var onGenerationActive: ((Boolean) -> Unit)? = null
+
+    /**
+     * GPU offload requested for the NEXT model load (layers already loaded keep
+     * their placement until unloaded). 0 = CPU-only, [GPU_LAYERS_MAX] = offload
+     * everything the Vulkan driver accepts; on devices without Vulkan llama.cpp
+     * logs a warning and runs CPU — the setting is an honest request, not a lie.
+     */
+    @Volatile
+    var gpuLayers: Int = GPU_LAYERS_MAX
 
     fun specFor(aiModelId: String): LocalModelSpec? = manager.specForAiId(aiModelId)
 
@@ -117,7 +127,9 @@ class LocalInferenceEngine(
             if (handle == null) {
                 state.value = LocalEngineState.Loading(spec.id, spec.name)
                 val threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 6)
-                val h = LlamaBridge.load(manager.fileFor(spec.id).absolutePath, N_CTX, threads)
+                val h = LlamaBridge.load(
+                    manager.fileFor(spec.id).absolutePath, N_CTX, threads, gpuLayers,
+                )
                 if (h <= 0L) {
                     val msg = "Failed to load \"${spec.name}\". Close other apps and retry " +
                         "(needs ≈${spec.ramHintMb} MB free RAM; invalid GGUF also causes this)."
@@ -164,5 +176,8 @@ class LocalInferenceEngine(
 
         /** 4096 covers the trimmed prompt budget plus 1024 generated tokens. */
         const val N_CTX = 4096
+
+        /** n_gpu_layers value meaning "offload everything" (llama.cpp clamps). */
+        const val GPU_LAYERS_MAX = 999
     }
 }

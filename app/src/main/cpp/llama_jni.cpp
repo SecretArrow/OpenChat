@@ -5,8 +5,11 @@
  * calling (background) thread and streams pieces through a Kotlin callback:
  * onToken(piece) returning false cleanly stops the loop (cancellation path).
  *
- * CPU-only by design: Android devices expose heterogeneous accelerators and
- * the honest lowest-common-denominator is CPU with mmap — no fake GPU claims.
+ * Compute: CPU with mmap always works (honest baseline). When the APK was
+ * built with the Vulkan backend (64-bit ABIs + glslc at build time — see
+ * CMakeLists.txt) and the device exposes a Vulkan 1.1+ driver, nGpuLayers > 0
+ * offloads weight layers to the GPU. No GPU → llama.cpp logs a warning and
+ * runs on CPU; nothing crashes, nothing fakes success.
  */
 #include <jni.h>
 #include <string>
@@ -37,15 +40,15 @@ Java_com_openchat_android_ai_local_LlamaBridge_nativeIsAvailable(JNIEnv*, jobjec
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_openchat_android_ai_local_LlamaBridge_nativeLoad(
-        JNIEnv* env, jobject, jstring jpath, jint nCtx, jint nThreads) {
+        JNIEnv* env, jobject, jstring jpath, jint nCtx, jint nThreads, jint nGpuLayers) {
     if (jpath == nullptr) return 0;
     const char* path = env->GetStringUTFChars(jpath, nullptr);
     if (path == nullptr) return 0;
 
     llama_backend_init();
     auto mparams = llama_model_default_params();
-    mparams.load_mode   = LLAMA_LOAD_MODE_MMAP;  // stream weights from flash
-    mparams.n_gpu_layers = 0;                    // CPU-only (honest baseline)
+    mparams.load_mode    = LLAMA_LOAD_MODE_MMAP;  // stream weights from flash
+    mparams.n_gpu_layers = static_cast<int>(nGpuLayers);  // 0 = CPU-only; high = offload all layers when a Vulkan device exists
     llama_model* model = llama_model_load_from_file(path, mparams);
     env->ReleaseStringUTFChars(jpath, path);
     if (model == nullptr) return 0;

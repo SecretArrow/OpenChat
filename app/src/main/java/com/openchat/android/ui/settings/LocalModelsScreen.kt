@@ -21,6 +21,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -132,16 +133,45 @@ fun LocalModelsScreen(nav: NavHostController) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 item {
+                    val settings by AppGraph.settings.settings.collectAsState()
+                    Card(Modifier.fillMaxWidth()) {
+                        Row(
+                            Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("GPU acceleration (Vulkan)", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    "Offload model layers to the GPU when this device has a " +
+                                        "Vulkan driver (64-bit builds). Without Vulkan the model " +
+                                        "runs on CPU automatically. Applies the next time a " +
+                                        "model loads — unload happens when you switch models or " +
+                                        "free memory.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline,
+                                )
+                            }
+                            Switch(
+                                checked = settings.localGpu,
+                                onCheckedChange = { on ->
+                                    AppGraph.settings.update { it.copy(localGpu = on) }
+                                },
+                            )
+                        }
+                    }
+                }
+                item {
                     Card(Modifier.fillMaxWidth()) {
                         Text(
                             "How it works: download a model once (Wi-Fi recommended), " +
                                 "then pick it in the chat model selector under " +
                                 "\"Local (on-device)\". Everything runs on this phone — " +
                                 "no account, no internet needed afterwards.\n\n" +
-                                "Honest limits: CPU inference (speed depends on your " +
-                                "chip; 1–2B models feel responsive, 3B+ is slower). " +
-                                "Keep ≈model size + 350 MB RAM free. The 32-bit build " +
-                                "(armeabi-v7a) cannot address models over ≈1.5 GB.",
+                                "Honest limits: CPU inference always available (speed " +
+                                "depends on your chip; 1–2B models feel responsive, 3B+ is " +
+                                "slower); GPU speedup only where a Vulkan 1.1+ driver " +
+                                "exists. Keep ≈model size + 350 MB RAM free. The 32-bit " +
+                                "build (armeabi-v7a) cannot address models over ≈1.5 GB.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.outline,
                             modifier = Modifier.padding(12.dp),

@@ -26,6 +26,20 @@ if(EXISTS ${LLAMA_DIR}/CMakeLists.txt)
     set(GGML_LLAMAFILE       OFF CACHE BOOL "" FORCE)
     set(GGML_BACKEND_DL      OFF CACHE BOOL "" FORCE)
     set(GGML_NATIVE          OFF CACHE BOOL "" FORCE)
+    # ---------------------------------------------------------------------------
+    # GPU: enable the Vulkan backend for 64-bit ABIs when a shader compiler
+    # (glslc, from the Vulkan SDK) is available on the build host. Devices
+    # without a Vulkan driver fall back to CPU at load time — honest fallback,
+    # never a fake GPU claim. armeabi-v7a stays CPU-only (legacy 32-bit GPUs).
+    # ---------------------------------------------------------------------------
+    find_program(GLSLC_PROG glslc)
+    if(GLSLC_PROG AND (ANDROID_ABI STREQUAL "arm64-v8a" OR ANDROID_ABI STREQUAL "x86_64"))
+        message(STATUS "OpenChat native: GGML_VULKAN=ON for ${ANDROID_ABI} (glslc: ${GLSLC_PROG})")
+        set(GGML_VULKAN ON CACHE BOOL "" FORCE)
+    else()
+        message(STATUS "OpenChat native: GGML_VULKAN=OFF for ${ANDROID_ABI} (glslc found: ${GLSLC_PROG})")
+        set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
+    endif()
     add_subdirectory(${LLAMA_DIR} llama-build EXCLUDE_FROM_ALL)
     add_library(llamajni SHARED llama_jni.cpp)
     target_link_libraries(llamajni llama ${log-lib})

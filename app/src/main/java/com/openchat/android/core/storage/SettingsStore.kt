@@ -24,6 +24,8 @@ data class AppSettings(
     val prootUrlOverride: String? = null,       // advanced: custom proot download URL
     val rootfsUrlOverride: String? = null,      // advanced: custom rootfs tarball URL
     val keepScreenOnInTerminal: Boolean = false,
+    val localGpu: Boolean = true,               // Vulkan offload for on-device models (CPU fallback)
+    val updateAutoCheck: Boolean = true,        // weekly-style silent update check on app start
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("appearance", appearance)
@@ -41,6 +43,8 @@ data class AppSettings(
         .put("prootUrlOverride", prootUrlOverride ?: JSONObject.NULL)
         .put("rootfsUrlOverride", rootfsUrlOverride ?: JSONObject.NULL)
         .put("keepScreenOnInTerminal", keepScreenOnInTerminal)
+        .put("localGpu", localGpu)
+        .put("updateAutoCheck", updateAutoCheck)
 
     companion object {
         fun fromJson(o: JSONObject): AppSettings {
@@ -62,6 +66,8 @@ data class AppSettings(
                 prootUrlOverride = if (o.isNull("prootUrlOverride")) null else o.optString("prootUrlOverride"),
                 rootfsUrlOverride = if (o.isNull("rootfsUrlOverride")) null else o.optString("rootfsUrlOverride"),
                 keepScreenOnInTerminal = o.optBoolean("keepScreenOnInTerminal", false),
+                localGpu = o.optBoolean("localGpu", true),
+                updateAutoCheck = o.optBoolean("updateAutoCheck", true),
             )
         }
     }

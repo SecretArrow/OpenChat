@@ -1,9 +1,16 @@
 package com.openchat.android.core.upd
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.app.DownloadManager
+import android.content.Intent
 import android.os.Environment
+import androidx.core.app.NotificationCompat
+import com.openchat.android.OpenChatApp
 import com.openchat.android.core.net.Http
+import com.openchat.android.core.storage.JsonStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -134,5 +141,72 @@ object AppUpdater {
         bytes >= (1L shl 20) -> String.format(Locale.US, "%.1f MB", bytes / 1048576.0)
         bytes >= (1L shl 10) -> String.format(Locale.US, "%.0f KB", bytes / 1024.0)
         else -> "$bytes B"
+    }
+
+    // ------------------------------------------------------------------
+    // Silent start-up check (spec §26 — lazy, never blocks launch):
+    // at most once per 24 h while "Auto-check for updates" is on. A newer
+    // release posts one subtle notification; tapping it opens the app's
+    // Updates screen (About), which offers the matching per-ABI APK.
+    // ------------------------------------------------------------------
+
+    private const val STATE_FILE = "update_check.json"
+    const val CHANNEL_UPDATES = "updates"
+    private const val NOTIFICATION_ID = 4101
+
+    /** Result of a silent start-up check. */
+    data class AutoCheckOutcome(val release: Release?, val checked: Boolean)
+
+    suspend fun autoCheck(context: Context, json: JsonStore): AutoCheckOutcome =
+        withContext(Dispatchers.IO) {
+            val state = runCatching {
+                json.readText(STATE_FILE)?.let { JSONObject(it) }
+            }.getOrNull() ?: JSONObject()
+            val last = state.optLong("lastCheck", 0L)
+            val now = System.currentTimeMillis()
+            if (now - last < 24L * 60L * 60L * 1000L) {
+                return@withContext AutoCheckOutcome(null, checked = false)
+            }
+            val result = checkLatest(android.os.Build.SUPPORTED_ABIS.toList())
+            state.put("lastCheck", now)
+            json.writeText(STATE_FILE, state.toString())
+            val release = result.getOrNull()?.takeIf {
+                isNewer(it.tag, com.openchat.android.BuildConfig.VERSION_NAME)
+            }
+            AutoCheckOutcome(release, checked = true)
+        }
+
+    /** Posts (idempotently) the "update available" notification. */
+    fun notifyUpdate(context: Context, release: Release) {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_UPDATES,
+                "Updates",
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply { description = "New OpenChat releases" },
+        )
+        val intent = Intent(context, com.openchat.android.MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(OpenChatApp.EXTRA_OPEN_UPDATES, true)
+        }
+        val pi = PendingIntent.getActivity(
+            context, NOTIFICATION_ID, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(context, CHANNEL_UPDATES)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("OpenChat ${release.tag} available")
+            .setContentText("Tap to review and install the update (${humanSize(release.apkSize)}).")
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText("A new version of OpenChat is available. Tap to open " +
+                        "Settings → About → Updates, where you can download the " +
+                        "APK built for this device (${release.apkName})."),
+            )
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .build()
+        runCatching { nm.notify(NOTIFICATION_ID, notification) }
     }
 }
