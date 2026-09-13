@@ -41,9 +41,12 @@ jobs:
 
       - name: Install CMake 3.31 + Vulkan SDK (glslc) for the GGUF Vulkan backend
         run: |
+          set -e
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "cmake;3.31.1" >/dev/null 2>&1 || true
-          wget -qO- https://packages.lunarg.com/vulkan/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc >/dev/null
-          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list https://packages.lunarg.com/vulkan/lunarg-vulkan-noble.list
+          wget -qO /tmp/lunarg-key.asc "https://packages.lunarg.com/lunarg-signing-key-pub.asc"
+          test -s /tmp/lunarg-key.asc
+          sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/lunarg-vulkan.gpg /tmp/lunarg-key.asc
+          echo "deb [signed-by=/usr/share/keyrings/lunarg-vulkan.gpg] https://packages.lunarg.com/vulkan noble main" | sudo tee /etc/apt/sources.list.d/lunarg-vulkan.list >/dev/null
           sudo apt-get update -qq
           sudo apt-get install -y -qq vulkan-sdk
           glslc --version | head -1
