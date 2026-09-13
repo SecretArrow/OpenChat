@@ -1,6 +1,9 @@
 package com.openchat.android.ui.settings
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,19 +20,24 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.openchat.android.BuildConfig
+import com.openchat.android.core.upd.AppUpdater
 import com.openchat.android.core.util.CrashLog
 import com.openchat.android.ui.components.CopyIconButton
 import com.openchat.android.ui.components.SectionHeader
+import kotlinx.coroutines.launch
 
 /**
  * About screen: real build/device facts (BuildConfig version, device ABI,
@@ -66,6 +74,9 @@ fun AboutScreen(nav: NavHostController) {
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
             )
+
+            SectionHeader("Updates")
+            UpdatesCard()
 
             SectionHeader("What works")
             Card(Modifier.fillMaxWidth()) {
@@ -152,4 +163,110 @@ fun AboutScreen(nav: NavHostController) {
 @Composable
 private fun FeatureBullet(text: String) {
     Text("•  $text", style = MaterialTheme.typography.bodySmall)
+}
+
+/**
+ * Update check against the public GitHub Releases (spec §21). Auto-checks
+ * when the screen opens; a newer release offers the matching per-ABI APK via
+ * the system DownloadManager, which hands the file to the system installer.
+ * Updates install over the old build because every release is signed with the
+ * same persistent keystore (GitHub Secrets, spec §19–§20).
+ */
+@Composable
+private fun UpdatesCard() {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var checking by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<Result<AppUpdater.Release>?>(null) }
+
+    val runCheck: () -> Unit = {
+        if (!checking) {
+            checking = true
+            scope.launch {
+                result = AppUpdater.checkLatest(Build.SUPPORTED_ABIS.toList())
+                checking = false
+            }
+        }
+    }
+    LaunchedEffect(Unit) { runCheck() }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Installed: ${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = runCheck, enabled = !checking) {
+                    Text(if (checking) "Checking…" else "Check for update")
+                }
+            }
+            when (val r = result) {
+                null -> Unit
+                else -> {
+                    val release = r.getOrNull()
+                    if (release == null) {
+                        Text(
+                            "Update check failed: ${r.exceptionOrNull()?.message ?: "unknown error"}. " +
+                                "Check the network connection and try again.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    } else if (!AppUpdater.isNewer(release.tag, BuildConfig.VERSION_NAME)) {
+                        Text(
+                            "You are on the latest release (${release.tag}).",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    } else {
+                        Text(
+                            "Update available: ${release.tag} · ${AppUpdater.humanSize(release.apkSize)} · ${release.apkName}",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        val notes = release.notes.trim().let {
+                            if (it.length > 400) it.take(400) + " …" else it
+                        }
+                        if (notes.isNotEmpty()) {
+                            Text(
+                                notes,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                            )
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            TextButton(onClick = {
+                                runCatching {
+                                    AppUpdater.enqueueApkDownload(ctx, release)
+                                    Toast.makeText(
+                                        ctx,
+                                        "Download started — open the finished notification to install",
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }.onFailure {
+                                    Toast.makeText(
+                                        ctx,
+                                        "Download failed: ${it.message}",
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }
+                            }) { Text("Download update") }
+                            TextButton(onClick = {
+                                runCatching {
+                                    ctx.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse(release.releaseUrl)),
+                                    )
+                                }.onFailure {
+                                    Toast.makeText(ctx, "No browser available", Toast.LENGTH_SHORT).show()
+                                }
+                            }) { Text("Releases page") }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

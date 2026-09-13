@@ -9,6 +9,12 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Self-update via GitHub Releases (spec §21): after DownloadManager
+         completes, the APK is handed to the system installer. The user grants
+         "install unknown apps" once; updates then install smoothly over the
+         existing build because every release shares one persistent keystore. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <application
         android:name=".OpenChatApp"
         android:allowBackup="false"
