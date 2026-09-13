@@ -136,6 +136,31 @@ fun ModelPicker(
                         onSelect(picked)
                     } }
                 }
+                // On-device GGUF models (downloaded via Settings → Local models).
+                val localManager = AppGraph.localModels
+                val downloaded = localManager.models.collectAsState().value
+                    .filter { localManager.isDownloaded(it.id) }
+                if (downloaded.isNotEmpty()) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                "Local (on-device)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                        onClick = {},
+                        enabled = false,
+                    )
+                    downloaded.forEach { spec ->
+                        val m = spec.toAIModel()
+                        ModelMenuItem(m, "on-device · ${spec.params} · ${spec.quant}", m.id == selected?.id) { picked ->
+                            expanded = false
+                            onSelect(picked)
+                        }
+                    }
+                }
+                }
             }
         }
     }

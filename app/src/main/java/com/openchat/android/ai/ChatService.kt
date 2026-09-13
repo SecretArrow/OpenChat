@@ -1,6 +1,8 @@
 package com.openchat.android.ai
 
 import com.openchat.android.AppGraph
+import com.openchat.android.ai.local.LocalInferenceEngine
+import com.openchat.android.ai.local.LocalModelSpec
 import com.openchat.android.ai.opencode.OpenCodeController
 import com.openchat.android.ai.providers.ChatClients
 import com.openchat.android.ai.providers.ChatRequest
@@ -50,6 +52,7 @@ class ChatService(
     private val models: ModelManager,
     private val opencode: OpenCodeController,
     private val settings: SettingsStore,
+    private val local: LocalInferenceEngine? = null,
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -203,7 +206,17 @@ class ChatService(
                     ChatMessage(id = UUID.randomUUID().toString(), role = Role.USER, content = text),
                 )
             }
-            val model = resolveModel(conv)
+            // On-device models are routed by their reserved "local:" id prefix —
+            // they bypass the provider registry entirely (download state is
+            // validated inside the engine, with honest errors).
+            val localSpec = conv.modelId
+                ?.takeIf { it.startsWith(LocalModelSpec.AI_PREFIX) }
+                ?.let { local?.specFor(it) }
+            val model = if (localSpec != null) {
+                localSpec.toAIModel()
+            } else {
+                resolveModel(conv)
+            }
             if (model == null) {
                 failWith(conv, noModelError(), assistantId = null)
                 return
@@ -215,15 +228,73 @@ class ChatService(
                 modelId = model.id,
             )
             conv = appendMessage(conv, assistant)
-            when (conv.backend) {
-                ChatBackend.OPENCODE -> runOpencode(conv, assistant.id, text, model)
-                ChatBackend.DIRECT -> runDirect(conv, assistant.id, model)
+            when {
+                localSpec != null && local != null -> runLocal(conv, assistant.id, localSpec, model)
+                conv.backend == ChatBackend.OPENCODE -> runOpencode(conv, assistant.id, text, model)
+                else -> runDirect(conv, assistant.id, model)
             }
         } finally {
             streamingState.value = false
             conversationById(conversationId)?.let { persistConversation(it) }
             persistIndex()
         }
+    }
+
+    /** LOCAL backend: on-device GGUF inference via [LocalInferenceEngine]. */
+    private suspend fun runLocal(
+        conv: Conversation,
+        assistantId: String,
+        spec: LocalModelSpec,
+        model: AIModel,
+    ) {
+        val engine = local ?: run {
+            failWith(
+                conv,
+                ErrorInfo(
+                    title = "On-device engine unavailable",
+                    detail = "The local inference engine is not initialized in this build.",
+                    suggestions = listOf("Restart the app", "Use a cloud model instead"),
+                ),
+                assistantId,
+            )
+            return
+        }
+        var lastPersist = System.currentTimeMillis()
+        val history = conv.messages
+            .filter { it.content.isNotBlank() }
+            .map { (if (it.role == Role.USER) "user" else "assistant") to it.content }
+        engine.generate(
+            spec = spec,
+            history = history,
+            maxTokens = model.maxTokens,
+            temperature = model.temperature,
+            onDelta = { delta ->
+                updateMessage(conv.id, assistantId) { it.copy(content = it.content + delta) }
+                val now = System.currentTimeMillis()
+                if (now - lastPersist > PERSIST_INTERVAL_MS) {
+                    lastPersist = now
+                    conversationById(conv.id)?.let { persistConversation(it) }
+                }
+            },
+        ).fold(
+            onSuccess = { conversationById(conv.id)?.let { persistConversation(it) } },
+            onFailure = { t ->
+                if (t is CancellationException) throw t
+                failWith(
+                    conv,
+                    ErrorInfo(
+                        title = "Local model error",
+                        detail = Redact.scrub(t.message ?: "unknown error"),
+                        suggestions = listOf(
+                            "Check free RAM (close other apps)",
+                            "Settings → Local models → re-download the model",
+                        ),
+                        retryable = true,
+                    ),
+                    assistantId,
+                )
+            },
+        )
     }
 
     /** DIRECT backend: stream deltas from the provider transport into the message. */

@@ -64,6 +64,7 @@ fun SettingsHomeScreen(nav: NavHostController) {
         "Providers" to Routes.PROVIDERS,
         "Models" to Routes.MODELS,
         "Ollama" to Routes.OLLAMA,
+        "Local models (on-device)" to Routes.LOCAL,
         "OpenCode" to Routes.OPENCODE,
         "Ubuntu userspace" to Routes.UBUNTU,
         "Terminal" to Routes.TERMINAL_SETTINGS,

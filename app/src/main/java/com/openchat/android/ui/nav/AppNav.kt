@@ -23,6 +23,7 @@ import com.openchat.android.ui.files.EditorScreen
 import com.openchat.android.ui.files.FilesScreen
 import com.openchat.android.ui.settings.AboutScreen
 import com.openchat.android.ui.settings.ModelEditScreen
+import com.openchat.android.ui.settings.LocalModelsScreen
 import com.openchat.android.ui.settings.ModelsScreen
 import com.openchat.android.ui.settings.OllamaScreen
 import com.openchat.android.ui.settings.OpenCodeScreen
@@ -47,6 +48,7 @@ object Routes {
     const val MODELS = "settings/models"
     const val MODEL_EDIT = "settings/model/{modelId}"
     const val OLLAMA = "settings/ollama"
+    const val LOCAL = "settings/local"
     const val OPENCODE = "settings/opencode"
     const val UBUNTU = "settings/ubuntu"
     const val TERMINAL_SETTINGS = "settings/terminal"
@@ -129,6 +131,7 @@ fun AppNav() {
                 ModelEditScreen(nav, entry.arguments?.getString("modelId") ?: "new")
             }
             composable(Routes.OLLAMA) { OllamaScreen(nav) }
+            composable(Routes.LOCAL) { LocalModelsScreen(nav) }
             composable(Routes.OPENCODE) { OpenCodeScreen(nav) }
             composable(Routes.UBUNTU) { UbuntuScreen(nav) }
             composable(Routes.TERMINAL_SETTINGS) { TerminalSettingsScreen(nav) }

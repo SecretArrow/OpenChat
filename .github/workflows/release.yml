@@ -20,7 +20,7 @@ jobs:
   release:
     name: Build signed per-ABI APKs + SHA256 + GitHub Release
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     # manual dispatch must provide an explicit tag input
     if: >-
       github.event_name == 'push' ||
@@ -30,6 +30,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Fetch llama.cpp (pinned b10941) for on-device GGUF engine
+        uses: actions/checkout@v4
+        with:
+          repository: ggml-org/llama.cpp
+          ref: b10941
+          path: app/src/main/cpp/llama.cpp
+          fetch-depth: 1
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4

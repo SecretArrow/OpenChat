@@ -23,4 +23,11 @@ class OpenChatApp : Application() {
         runCatching { AppGraph.models }
         runCatching { AppGraph.settings }
     }
+
+    /** RAM pressure: free on-device model weights when the system asks (§24). */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        runCatching { AppGraph.localEngine.onTrimMemory(level) }
+            .onFailure { Redact.w("OpenChat/App", "trim skip: ${it.message}") }
+    }
 }

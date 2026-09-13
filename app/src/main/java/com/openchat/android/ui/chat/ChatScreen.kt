@@ -53,6 +53,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.PaddingValues
 import com.openchat.android.AppGraph
+import com.openchat.android.ai.local.LocalEngineState
 import com.openchat.android.core.model.ChatBackend
 import com.openchat.android.core.model.ChatMessage
 import com.openchat.android.core.model.Role
@@ -78,6 +79,7 @@ fun ChatScreen(onOpenTerminal: (() -> Unit)? = null) {
     val activeId by AppGraph.chat.activeId.collectAsState()
     val streaming by AppGraph.chat.streaming.collectAsState()
     val lastError by AppGraph.chat.lastError.collectAsState()
+    val localState by AppGraph.localEngine.engineState.collectAsState()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
     val conv = conversations.firstOrNull { it.id == activeId }
@@ -292,8 +294,12 @@ fun ChatScreen(onOpenTerminal: (() -> Unit)? = null) {
                                 val steps =
                                     messages.lastOrNull { it.role == Role.ASSISTANT }?.toolBlocks?.size ?: 0
                                 Text(
-                                    if (agentMode) "Agent working… ($steps step${if (steps == 1) "" else "s"} so far)"
-                                    else "Generating…",
+                                    when {
+                                        localState is LocalEngineState.Loading ->
+                                            "Loading local model… (first load can take a while)"
+                                        agentMode -> "Agent working… ($steps step${if (steps == 1) "" else "s"} so far)"
+                                        else -> "Generating…"
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                                 Spacer(Modifier.weight(1f))

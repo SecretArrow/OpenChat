@@ -5,7 +5,10 @@ import com.openchat.android.ai.ChatService
 import com.openchat.android.ai.ModelManager
 import com.openchat.android.ai.OllamaManager
 import com.openchat.android.ai.ProviderManager
+import com.openchat.android.ai.local.LocalInferenceEngine
+import com.openchat.android.ai.local.LocalModelManager
 import com.openchat.android.ai.opencode.OpenCodeController
+import com.openchat.android.bg.RuntimeServiceController
 import com.openchat.android.core.net.Http
 import com.openchat.android.core.storage.JsonStore
 import com.openchat.android.core.storage.SecretStore
@@ -56,6 +59,28 @@ object AppGraph {
 
     val ollama: OllamaManager by lazy { OllamaManager(json, secrets) }
 
+    /** On-device GGUF models: catalog + downloads + imports (files only). */
+    val localModels: LocalModelManager by lazy {
+        LocalModelManager(json, File(appContext.filesDir, "localmodels"), appContext.contentResolver)
+    }
+
+    /** The single on-device inference slot (one loaded model at a time). */
+    val localEngine: LocalInferenceEngine by lazy {
+        LocalInferenceEngine(appContext, localModels).also { engine ->
+            // Protect the process while generating (§14/§25); release the
+            // keep-alive afterwards when no terminal sessions need it.
+            engine.onGenerationActive = { active ->
+                if (active) {
+                    RuntimeServiceController.start(appContext)
+                } else if (AppGraph.terminal.sessions.value.isEmpty()) {
+                    RuntimeServiceController.stop(appContext)
+                }
+            }
+            // A deleted model must not keep weights resident.
+            localModels.onDeleteHook = { spec -> engine.unloadIfLoaded(spec.id) }
+        }
+    }
+
     val ubuntu: UbuntuRuntime by lazy {
         val runtime = UbuntuRuntime(
             appContext,
@@ -87,7 +112,7 @@ object AppGraph {
         OpenCodeController(ubuntu, providers, models, json, settings)
     }
 
-    val chat: ChatService by lazy { ChatService(json, providers, models, opencode, settings) }
+    val chat: ChatService by lazy { ChatService(json, providers, models, opencode, settings, localEngine) }
 
     val files: FileManagerService by lazy { FileManagerService(appContext) }
 }

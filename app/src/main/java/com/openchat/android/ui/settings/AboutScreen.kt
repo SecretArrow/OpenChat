@@ -73,6 +73,7 @@ fun AboutScreen(nav: NavHostController) {
                     FeatureBullet("Ubuntu 22.04/24.04 base rootfs (checksum-verified) via proot — apt, git, python3, Node 20")
                     FeatureBullet("OpenCode CLI coding agent running inside the userspace with tool output in chat")
                     FeatureBullet("Chat with OpenAI, Anthropic, Gemini, OpenRouter, custom OpenAI-compatible endpoints and LAN Ollama")
+                    FeatureBullet("On-device GGUF models (llama.cpp): resumable downloads, import/export, offline chat")
                     FeatureBullet("Streaming responses, markdown rendering, copyable code blocks, tool blocks")
                     FeatureBullet("VT100/xterm terminal: 256 colors, scrollback, extra keys, copy/paste, multiple sessions")
                     FeatureBullet("File manager + editor across app data, rootfs and workspaces, SAF import/export")
