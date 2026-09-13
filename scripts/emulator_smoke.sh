@@ -20,11 +20,20 @@ AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f 2>/dev/null | sort |
 test -n "$AAPT" || { echo "::error::aapt not found in ANDROID_HOME/build-tools"; exit 1; }
 APP_ID="$("$AAPT" dump badging "$APK" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -1)"
 test -n "$APP_ID" || { echo "::error::could not read package name from $APK"; exit 1; }
-echo "installing: $APK  (package: $APP_ID)"
+# Launchable activity is the manifest class (com.openchat.android.MainActivity);
+# am start needs <applicationId>/<class> — these differ on debug builds (.debug
+# applicationIdSuffix). Build the full component name from aapt's badging.
+MAIN_ACT="$("$AAPT" dump badging "$APK" | sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" | head -1)"
+test -n "$MAIN_ACT" || { echo "::error::could not read launchable activity from $APK"; exit 1; }
+case "$MAIN_ACT" in
+  .*) MAIN_ACT="$APP_ID$MAIN_ACT" ;;
+esac
+COMPONENT="$APP_ID/$MAIN_ACT"
+echo "installing: $APK  (package: $APP_ID, activity: $MAIN_ACT)"
 
 # --- install + cold launch ----------------------------------------------------
 adb install -r "$APK"
-adb shell am start -W -n "$APP_ID/.MainActivity" || { echo "::error::am start failed"; exit 1; }
+adb shell am start -W -n "$COMPONENT" || { echo "::error::am start failed for $COMPONENT"; exit 1; }
 echo "launched, settling 12s…"
 sleep 12
 
@@ -33,7 +42,8 @@ PID="$(adb shell pidof "$APP_ID" | tr -d '\r' || true)"
 echo "pid: ${PID:-<none>}"
 if [ -z "$PID" ]; then
   echo "::error::app process is NOT alive after launch"
-  adb logcat -d | tail -300 || true
+  adb logcat -d | grep -A 30 -F "FATAL EXCEPTION" | head -50 || true
+  adb logcat -d | grep -iE "AndroidRuntime|$APP_ID" | tail -60 || true
   exit 1
 fi
 
