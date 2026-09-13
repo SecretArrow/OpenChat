@@ -70,6 +70,11 @@ jobs:
           git clone --depth 1 --branch vulkan-sdk-1.4.309.0 https://github.com/KhronosGroup/SPIRV-Headers /tmp/spirv-headers-src
           cmake -S /tmp/spirv-headers-src -B /tmp/spirv-headers-build -DCMAKE_INSTALL_PREFIX=/tmp/spirv-headers-install >/dev/null
           cmake --install /tmp/spirv-headers-build >/dev/null
+          # ggml-vulkan also includes <spirv/unified1/spirv.hpp>; the official
+          # SDK ships it in the same include prefix — mirror that layout here.
+          mkdir -p /tmp/vk-include
+          cp -r /tmp/spirv-headers-install/include/spirv /tmp/vk-include/spirv
+          test -f /tmp/vk-include/spirv/unified1/spirv.hpp
           # Config lands in <prefix>/share/cmake/SPIRV-Headers (DATADIR) — detect it.
           SP_DIR="$(dirname "$(find /tmp/spirv-headers-install -name SPIRV-HeadersConfig.cmake | head -1)")"
           test -n "$SP_DIR" && test -f "$SP_DIR/SPIRV-HeadersConfig.cmake"
