@@ -6,10 +6,11 @@
 #   4. capture a screenshot as evidence (uploaded as a workflow artifact)
 # Works for BOTH debug and release APKs: the application id is auto-detected
 # with aapt (debug builds carry a .debug applicationIdSuffix).
+# $1 may be a glob (resolved with ls; first match wins).
 set -euo pipefail
 
-APK="${1:?usage: emulator_smoke.sh <apk-path>}"
-test -f "$APK" || { echo "::error::APK not found: $APK"; exit 1; }
+APK="$(ls ${1:?usage: emulator_smoke.sh <apk-path-or-glob>} 2>/dev/null | head -1 || true)"
+test -n "$APK" && test -f "$APK" || { echo "::error::APK not found for pattern: ${1}"; ls -la . apks/ release/ 2>/dev/null || true; exit 1; }
 
 adb wait-for-device
 echo "device: $(adb shell getprop ro.product.model | tr -d '\r') (API $(adb shell getprop ro.build.version.sdk | tr -d '\r'))"

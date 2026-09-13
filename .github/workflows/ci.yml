@@ -124,7 +124,7 @@ jobs:
           api-level: 30
           target: google_apis
           arch: x86_64
-          script: bash scripts/emulator_smoke.sh apks/OpenChat-x86_64.apk
+          script: bash scripts/emulator_smoke.sh 'apks/OpenChat-x86_64-debug.apk'
 
       - name: Upload smoke screenshot (evidence)
         if: always()
