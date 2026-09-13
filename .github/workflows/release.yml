@@ -17,10 +17,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Build signed per-ABI APKs + SHA256 + GitHub Release
+  build:
+    name: Build signed per-ABI APKs + SHA256
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 55
     # manual dispatch must provide an explicit tag input
     if: >-
       github.event_name == 'push' ||
@@ -117,6 +117,56 @@ jobs:
           name: OpenChat-release-APKs
           path: release/
           if-no-files-found: error
+
+  smoke:
+    name: Run release APK on Android emulator (smoke)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout (for scripts/)
+        uses: actions/checkout@v4
+
+      - name: Download signed release APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: OpenChat-release-APKs
+          path: release/
+
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls /dev/kvm
+
+      - name: Run signed release APK on Android emulator (API 30, x86_64)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          script: bash scripts/emulator_smoke.sh release/OpenChat-x86_64.apk
+
+      - name: Upload smoke screenshot (evidence)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-screen-release
+          path: smoke-screen.png
+          if-no-files-found: ignore
+
+  publish:
+    name: Create GitHub Release with per-ABI APKs + checksums
+    needs: [build, smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download signed release APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: OpenChat-release-APKs
+          path: release/
 
       - name: Create GitHub Release with per-ABI APKs + checksums
         uses: softprops/action-gh-release@v2
