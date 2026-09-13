@@ -128,7 +128,7 @@ object LocalHistory {
  * Curated catalog (≤6B params, GGUF, current families on HuggingFace,
  * URLs + sizes verified live — HTTP 200/206 + exact byte size — before
  * being added; no invented entries, spec §32). Coding models come first —
- * Open Chat is a coding environment. Quantizer for unsloth/* repos is the
+ * Open Chat is a coding environment. Quantizer for the unsloth repos is the
  * reputable Unsloth dynamic quants; everything else is the model author's
  * official GGUF or bartowski's community quants.
  */
