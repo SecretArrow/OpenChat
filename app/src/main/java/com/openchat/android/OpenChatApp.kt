@@ -1,6 +1,7 @@
 package com.openchat.android
 
 import android.app.Application
+import com.openchat.android.core.util.CrashLog
 import com.openchat.android.core.util.Redact
 
 /**
@@ -11,6 +12,9 @@ class OpenChatApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Crash diagnostics FIRST: any failure below this line is recorded on
+        // device (Settings → About → Crash log) instead of being a mystery.
+        CrashLog.install(this)
         AppGraph.init(this)
         // Touch lazy graph members that must restore persisted state early.
         runCatching { AppGraph.processes }

@@ -15,12 +15,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.openchat.android.BuildConfig
+import com.openchat.android.core.util.CrashLog
 import com.openchat.android.ui.components.CopyIconButton
 import com.openchat.android.ui.components.SectionHeader
 
@@ -71,6 +78,43 @@ fun AboutScreen(nav: NavHostController) {
                     FeatureBullet("File manager + editor across app data, rootfs and workspaces, SAF import/export")
                     FeatureBullet("Workspace manager and background process supervisor with foreground keep-alive")
                     FeatureBullet("Keystore-backed secret storage; keys are never displayed or logged")
+                }
+            }
+
+            SectionHeader("Crash log")
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    var crashText by remember { mutableStateOf(CrashLog.read()) }
+                    if (crashText == null) {
+                        Text(
+                            "No crash recorded on this device. If the app ever closes by " +
+                                "itself, the exact cause appears here — copy it and send it " +
+                                "to the developer for a targeted fix.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    } else {
+                        Text(
+                            "The app previously crashed. The report below identifies the " +
+                                "exact cause — copy it and send it to the developer.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Text(
+                            crashText.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            CopyIconButton(crashText.orEmpty())
+                            TextButton(onClick = {
+                                CrashLog.clear()
+                                crashText = null
+                            }) { Text("Clear") }
+                        }
+                    }
                 }
             }
 
