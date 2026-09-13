@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Chat bubble -->
+    <path
+        android:fillColor="#5B8DEF"
+        android:pathData="M24,30 C24,25.6 27.6,22 32,22 L76,22 C80.4,22 84,25.6 84,30 L84,64 C84,68.4 80.4,72 76,72 L46,72 L34,82 L34,72 L32,72 C27.6,72 24,68.4 24,64 Z" />
+    <!-- Terminal prompt inside bubble -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M36,38 L46,46 L36,54 L36,49 L41,46 L36,43 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M50,52 L66,52 L66,57 L50,57 Z" />
+</vector>

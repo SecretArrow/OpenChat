@@ -1,0 +1,230 @@
+package com.openchat.android.ui.settings
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavHostController
+import com.openchat.android.AppGraph
+import com.openchat.android.core.model.ErrorInfo
+import com.openchat.android.core.model.RepairAction
+import com.openchat.android.core.model.UbuntuState
+import com.openchat.android.ui.components.AppIcons
+import com.openchat.android.ui.components.ConfirmDialog
+import com.openchat.android.ui.components.ErrorCard
+import com.openchat.android.ui.components.StatusPill
+import com.openchat.android.ui.components.formatDate
+import com.openchat.android.ui.nav.Routes
+import kotlinx.coroutines.launch
+
+/**
+ * Ubuntu userspace management (spec §3–4): full install chain with progress,
+ * repair, update, destructive reset (with confirm), open terminal shortcut
+ * and the installer/runtime log tail (spec §26 honesty).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun UbuntuScreen(nav: NavHostController) {
+    val status by AppGraph.ubuntu.status.collectAsState()
+    val log by AppGraph.ubuntu.log.collectAsState()
+    val scope = rememberCoroutineScope()
+    var confirmReset by remember { mutableStateOf(false) }
+    var working by remember { mutableStateOf(false) }
+
+    val blocked = status.state.busy || working
+
+    fun toast(msg: String) {
+        android.widget.Toast.makeText(AppGraph.appContext, msg, android.widget.Toast.LENGTH_LONG).show()
+    }
+
+    fun op(label: String, action: suspend () -> Result<Unit>) {
+        if (blocked) return
+        scope.launch {
+            working = true
+            action().fold(
+                { toast("$label completed") },
+                { toast("$label failed: ${it.message ?: "unknown error"}") },
+            )
+            working = false
+        }
+    }
+
+    val errorInfo: ErrorInfo? = if (status.state == UbuntuState.ERROR) {
+        ErrorInfo(
+            title = "Ubuntu installation error",
+            detail = status.message ?: "The last Ubuntu operation failed.",
+            causes = listOf(
+                "Download interrupted or checksum mismatch",
+                "Storage full — the rootfs needs several hundred MB",
+                "Extraction failed (corrupt tarball or SELinux restriction)"
+            ),
+            suggestions = listOf(
+                "Use Repair to re-verify and re-extract the rootfs",
+                "Use Reset for a clean re-install",
+                "Check free space in Settings → Storage"
+            ),
+            retryable = true,
+            repairAction = RepairAction.UBUNTU_REPAIR,
+        )
+    } else {
+        null
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Ubuntu userspace") },
+                navigationIcon = { IconButtonBack { nav.popBackStack() } },
+            )
+        },
+    ) { pad ->
+        Column(
+            Modifier
+                .padding(pad)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row {
+                        Text(
+                            "Status",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        StatusPill(status.state.name, ok = status.state == UbuntuState.READY)
+                    }
+                    Text(
+                        "Version: ${status.version ?: "—"} · Arch: ${status.arch ?: "—"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    status.rootfsPath?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.outline,
+                        )
+                    }
+                    Text(
+                        "Last updated: ${formatDate(status.lastUpdated)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                    status.message?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (status.state.busy) {
+                        LinearProgressIndicator(
+                            progress = { status.progress / 100f },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { op("Install") { AppGraph.ubuntu.install() } },
+                    enabled = !blocked &&
+                        (status.state == UbuntuState.NOT_INSTALLED || status.state == UbuntuState.ERROR),
+                ) { Text("Install") }
+                OutlinedButton(
+                    onClick = { op("Repair") { AppGraph.ubuntu.repair() } },
+                    enabled = !blocked,
+                ) { Text("Repair") }
+                OutlinedButton(
+                    onClick = { op("Update") { AppGraph.ubuntu.update() } },
+                    enabled = !blocked && status.installed,
+                ) { Text("Update") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { nav.navigate(Routes.TERMINAL) },
+                    enabled = status.installed,
+                ) {
+                    Icon(AppIcons.Terminal, contentDescription = null)
+                    Text("  Open Terminal")
+                }
+                OutlinedButton(
+                    onClick = { confirmReset = true },
+                    enabled = !blocked,
+                ) { Text("Reset", color = MaterialTheme.colorScheme.error) }
+            }
+
+            ErrorCard(
+                info = errorInfo,
+                onRetry = { op("Repair") { AppGraph.ubuntu.repair() } },
+                onRepair = { action ->
+                    when (action) {
+                        RepairAction.UBUNTU_REPAIR -> op("Repair") { AppGraph.ubuntu.repair() }
+                        RepairAction.UBUNTU_RESET -> confirmReset = true
+                        else -> Unit
+                    }
+                },
+            )
+
+            Text(
+                "Log (last 40 lines)",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Card(Modifier.fillMaxWidth()) {
+                Text(
+                    log.takeLast(40).joinToString("\n").ifBlank { "(no log output yet)" },
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 240.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(8.dp),
+                )
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    if (confirmReset) {
+        ConfirmDialog(
+            title = "Reset Ubuntu?",
+            text = "This deletes the whole Ubuntu rootfs — every package, workspace file and " +
+                "configuration inside it. You will have to install again from scratch.",
+            onConfirm = {
+                confirmReset = false
+                op("Reset") { AppGraph.ubuntu.reset() }
+            },
+            onDismiss = { confirmReset = false },
+        )
+    }
+}

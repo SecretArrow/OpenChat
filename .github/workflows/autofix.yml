@@ -1,0 +1,105 @@
+name: Auto Fix
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Failed CI run id to analyze (empty = latest failed CI run on main)'
+        required: false
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: autofix
+  cancel-in-progress: false
+
+jobs:
+  autofix:
+    name: Diagnose failure, apply fixes, push to main
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'failure' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.name == 'CI')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.AUTOFIX_TOKEN != '' && secrets.AUTOFIX_TOKEN || github.token }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Collect failed CI logs
+        env:
+          GH_TOKEN: ${{ secrets.AUTOFIX_TOKEN != '' && secrets.AUTOFIX_TOKEN || github.token }}
+          FAILED_RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+        run: |
+          set -e
+          if [ -z "$FAILED_RUN_ID" ]; then
+            FAILED_RUN_ID=$(gh run list --workflow CI --status failure --limit 1 --json databaseId -q '.[0].databaseId' || true)
+          fi
+          if [ -z "$FAILED_RUN_ID" ]; then
+            echo "No failed CI run found — nothing to fix."
+            echo "NOOP=true" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "Analyzing failed run: $FAILED_RUN_ID"
+          gh run view "$FAILED_RUN_ID" --log-failed > failed_logs.txt 2>/dev/null || true
+          # Keep the tail (most relevant for compile failures) but bounded
+          tail -c 400000 failed_logs.txt > failed_logs_tail.txt || true
+          echo "FAILED_RUN_ID=$FAILED_RUN_ID" >> "$GITHUB_ENV"
+
+      - name: Apply deterministic heuristic fixes
+        if: env.NOOP != 'true'
+        run: python3 scripts/autofix.py failed_logs_tail.txt
+
+      - name: Optional AI-assisted patch (requires AI_API_KEY secret)
+        if: env.NOOP != 'true'
+        env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_BASE_URL: ${{ secrets.AI_BASE_URL }}
+          AI_MODEL: ${{ secrets.AI_MODEL }}
+        run: |
+          if [ -n "$AI_API_KEY" ]; then
+            python3 scripts/autofix_ai.py failed_logs_tail.txt || echo "AI-assisted fix skipped/failed (non-fatal)"
+          else
+            echo "AI_API_KEY not set — heuristic fixes only."
+          fi
+
+      - name: Rerun on transient failures (network flake)
+        if: env.NOOP != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.AUTOFIX_TOKEN != '' && secrets.AUTOFIX_TOKEN || github.token }}
+        run: |
+          if grep -q "^TRANSIENT$" autofix_result.txt 2>/dev/null; then
+            echo "Transient failure detected — rerunning failed jobs."
+            gh run rerun "${FAILED_RUN_ID}" --failed || true
+          else
+            echo "Not a transient failure."
+          fi
+
+      - name: Commit and push fixes to main
+        if: env.NOOP != 'true'
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "openchat-autofix"
+            git config user.email "autofix@users.noreply.github.com"
+            git add -A
+            git commit -m "ci: auto-fix build errors from CI run ${FAILED_RUN_ID}" || exit 0
+            git push origin HEAD:main
+            echo "Fixes pushed to main — CI will re-run automatically."
+          else
+            echo "No deterministic fix available. Manual intervention required."
+            exit 0
+          fi

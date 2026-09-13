@@ -1,0 +1,33 @@
+# Gradle
+.gradle/
+build/
+*/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android / IDE
+local.properties
+.idea/
+*.iml
+.DS_Store
+captures/
+.cxx/
+
+# Signing secrets — NEVER commit real credentials or keystores
+keystore.properties
+*.jks
+*.keystore
+!keystore.properties.example
+signing/
+release/*.apk
+release/*.txt
+
+# Tokens / credentials — NEVER commit
+.git-creds
+.ghtoken
+*.token
+secrets.properties
+
+# Logs
+*.log
+failed_logs*.txt
+autofix_result.txt
