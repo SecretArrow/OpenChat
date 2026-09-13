@@ -1,12 +1,11 @@
 name: Release
 
 on:
-  push:
-    tags: ['v*']
+  create:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag to release (leave empty to release current commit as draft-less stable)'
+        description: 'Existing tag to release (empty = use current ref)'
         required: false
 
 permissions:
@@ -21,6 +20,10 @@ jobs:
     name: Build signed per-ABI APKs + SHA256 + GitHub Release
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # create fires for branches too — only run for v* tags or manual dispatch
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.ref_type == 'tag' && startsWith(github.ref_name, 'v'))
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -52,7 +52,7 @@ fun StorageScreen(nav: NavHostController) {
     val appDataRoot: File? = AppGraph.files.rootFor(FileDomain.APP_DATA)
     val rootfsRoot: File? = AppGraph.files.rootFor(FileDomain.UBUNTU_ROOTFS)
     val workspaceRoot: File? = AppGraph.files.rootFor(FileDomain.WORKSPACE)
-    val cacheDir: File = File(File(AppGraph.appContext.filesDir), "ubuntu/cache")
+    val cacheDir: File = File(AppGraph.appContext.filesDir, "ubuntu/cache")
 
     fun dirSize(root: File?): Long =
         if (root == null || !root.exists()) 0L

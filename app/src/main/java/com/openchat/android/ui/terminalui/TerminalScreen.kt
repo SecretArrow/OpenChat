@@ -293,7 +293,7 @@ private fun TerminalView(
             }) { Text("Copy") }
             TextButton(onClick = {
                 val t = clipboard.getText()
-                if (t.text.isNotEmpty()) session.write(t.text)
+                if (t != null && t.text.isNotEmpty()) session.write(t.text)
             }) { Text("Paste") }
             TextButton(onClick = {
                 AppGraph.settings.update {
