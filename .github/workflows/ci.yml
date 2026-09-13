@@ -49,6 +49,9 @@ jobs:
           mkdir -p /tmp/vk-include
           cp -r "$(dirname "$VKHPP")" /tmp/vk-include/vulkan
           test -f /tmp/vk-include/vulkan/vulkan.hpp
+          # vulkan_core.h also includes the vk_video codec headers — same SDK.
+          VKVID="$(find /usr -type d -name vk_video 2>/dev/null | head -1)"
+          if [ -n "$VKVID" ]; then cp -r "$VKVID" /tmp/vk-include/vk_video; fi
           echo "OPENCHAT_VK_INCLUDE=/tmp/vk-include" >> "$GITHUB_ENV"
           # ggml-vulkan needs the SPIRV-Headers CMake config package. Host
           # prefixes are invisible to the NDK cross-configure (root-path
