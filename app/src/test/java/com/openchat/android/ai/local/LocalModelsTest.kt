@@ -38,11 +38,53 @@ class LocalModelsTest {
             id = "x", name = "Model X", repo = null, file = null, sizeBytes = 123L,
             params = "1B", quant = "Q4_K_M", notes = "n",
             source = LocalModelSpec.SOURCE_IMPORTED, downloadedAt = 42L,
+            reasoning = true,
         )
         val back = LocalModelSpec.fromJson(s.toJson())
         assertEquals(s, back)
         assertNullCompat(back.repo)
         assertNullCompat(back.file)
+        assertTrue(back.reasoning)
+    }
+
+    @Test
+    fun `catalog includes the verified 2025 mobile wave`() {
+        val ids = LocalCatalog.MODELS.map { it.id }.toSet()
+        val expected = setOf(
+            "qwen2.5-coder-0.5b-instruct-q4_k_m",
+            "qwen3-0.6b-q4_k_m",
+            "qwen3-1.7b-q4_k_m",
+            "qwen3-4b-instruct-2507-q4_k_m",
+            "qwen3-4b-thinking-2507-q4_k_m",
+            "qwen2.5-3b-instruct-q4_k_m",
+            "gemma-3-1b-it-q4_k_m",
+            "gemma-3-4b-it-q4_k_m",
+            "smollm2-360m-instruct-q8_0",
+            "smollm3-3b-q4_k_m",
+            "phi-4-mini-instruct-q4_k_m",
+        )
+        assertTrue("missing: ${expected - ids}", ids.containsAll(expected))
+        assertTrue("expected ≥20 models, got ${ids.size}", ids.size >= 20)
+    }
+
+    @Test
+    fun `reasoning flag is set exactly on thinking models`() {
+        val reasoning = LocalCatalog.MODELS.filter { it.reasoning }.map { it.id }.toSet()
+        assertEquals(
+            setOf(
+                "smollm3-3b-q4_k_m",
+                "qwen3-1.7b-q4_k_m",
+                "qwen3-0.6b-q4_k_m",
+                "qwen3-4b-thinking-2507-q4_k_m",
+                "deepseek-r1-distill-qwen-1.5b-q4_k_m",
+            ),
+            reasoning,
+        )
+        // and the AIModel adapter carries it through
+        val think = LocalCatalog.MODELS.first { it.id == "qwen3-4b-thinking-2507-q4_k_m" }
+        assertTrue(think.toAIModel().reasoning)
+        val plain = LocalCatalog.MODELS.first { it.id == "qwen3-4b-instruct-2507-q4_k_m" }
+        assertFalse(plain.toAIModel().reasoning)
     }
 
     private fun assertNullCompat(v: Any?) = assertTrue(v == null)

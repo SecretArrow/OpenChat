@@ -144,9 +144,13 @@ class LocalInferenceEngine(
             // ---- generate ---------------------------------------------------
             val trimmed = LocalHistory.trim(history)
             var cancelCause: Throwable? = null
+            // Reasoning models (R1 distills, Qwen3, SmolLM3) emit a
+            // <think>…</think> phase — the filter hides it and streams only
+            // the answer; non-thinking output passes through unchanged.
+            val filter = ThinkFilter(onDelta)
             val cb = object : LlamaBridge.Callback {
                 override fun onToken(piece: String): Boolean = try {
-                    onDelta(piece)
+                    filter.feed(piece)
                     ctx.ensureActive()
                     true
                 } catch (t: Throwable) {
@@ -157,6 +161,7 @@ class LocalInferenceEngine(
             val finish = LlamaBridge.startCompletion(
                 handle!!, trimmed, maxTokens.coerceIn(64, 1024), temperature.toFloat(), cb,
             )
+            filter.finish()
             cancelCause?.let { throw it }
             when (finish) {
                 "stop", "length", "cancelled" -> Result.success(Unit)
