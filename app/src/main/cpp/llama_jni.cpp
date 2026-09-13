@@ -44,9 +44,8 @@ Java_com_openchat_android_ai_local_LlamaBridge_nativeLoad(
 
     llama_backend_init();
     auto mparams = llama_model_default_params();
-    mparams.use_mmap    = true;   // stream weights from flash; resident RSS stays near file size
-    mparams.use_mlock   = false;
-    mparams.n_gpu_layers = 0;     // CPU-only (honest baseline)
+    mparams.load_mode   = LLAMA_LOAD_MODE_MMAP;  // stream weights from flash
+    mparams.n_gpu_layers = 0;                    // CPU-only (honest baseline)
     llama_model* model = llama_model_load_from_file(path, mparams);
     env->ReleaseStringUTFChars(jpath, path);
     if (model == nullptr) return 0;
