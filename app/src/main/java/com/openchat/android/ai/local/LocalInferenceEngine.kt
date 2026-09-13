@@ -1,5 +1,6 @@
 package com.openchat.android.ai.local
 
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
@@ -67,7 +68,7 @@ class LocalInferenceEngine(
 
     /** Called from Application#onTrimMemory — free weights when RAM is low. */
     fun onTrimMemory(level: Int) {
-        if (level >= Context.TRIM_MEMORY_RUNNING_LOW && !busy.get()) {
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW && !busy.get()) {
             scope.launch { unload() }
         }
     }

@@ -11,6 +11,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
@@ -60,6 +61,9 @@ class LocalModelManager(
     private val cancelFlags = ConcurrentHashMap<String, AtomicBoolean>()
     private val active = ConcurrentHashMap.newKeySet<String>()
 
+    private fun flagOf(map: ConcurrentHashMap<String, AtomicBoolean>, id: String, v: Boolean): AtomicBoolean =
+        map.computeIfAbsent(id) { AtomicBoolean(v) }
+
     /** Set by AppGraph: unload the engine before the file disappears. */
     var onDeleteHook: ((LocalModelSpec) -> Unit)? = null
 
@@ -90,18 +94,18 @@ class LocalModelManager(
         val s = spec(id) ?: return
         if (s.url == null) return
         if (!active.add(id)) return
-        pauseFlags.getOrPut(id) { AtomicBoolean(false) }.set(false)
-        cancelFlags.getOrPut(id) { AtomicBoolean(false) }.set(false)
+        flagOf(pauseFlags, id, false).set(false)
+        flagOf(cancelFlags, id, false).set(false)
         scope.launch { runDownload(s) }
     }
 
     fun pause(id: String) {
-        pauseFlags.getOrPut(id) { AtomicBoolean(true) }.set(true)
+        flagOf(pauseFlags, id, true).set(true)
     }
 
     /** Cancel deletes the partial file — the model returns to "not downloaded". */
     fun cancel(id: String) {
-        val flag = cancelFlags.getOrPut(id) { AtomicBoolean(true) }
+        val flag = flagOf(cancelFlags, id, true)
         if (active.contains(id)) {
             flag.set(true)
         } else {
@@ -170,6 +174,7 @@ class LocalModelManager(
         val f = fileFor(id)
         if (!f.exists()) error("Model file not found")
         f.inputStream().use { ins -> ins.copyTo(out, 64 * 1024) }
+        Unit
     }.onFailure {
         Log.w(TAG, "export failed: ${it.message}")
     }
@@ -221,8 +226,8 @@ class LocalModelManager(
         val url = spec.url ?: return
         val part = partFile(id)
         val meta = metaFile(id)
-        val pause = pauseFlags.getOrPut(id) { AtomicBoolean(false) }
-        val cancel = cancelFlags.getOrPut(id) { AtomicBoolean(false) }
+        val pause = flagOf(pauseFlags, id, false)
+        val cancel = flagOf(cancelFlags, id, false)
         try {
             dl.update { it + (id to DownloadState.Idle) }
             var offset = if (part.exists()) part.length() else 0L
@@ -366,8 +371,14 @@ class LocalModelManager(
     }
 
     private fun queryDisplayName(r: ContentResolver, uri: Uri): String? = runCatching {
-        r.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
-            ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        var name: String? = null
+        val cursor = r.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+        if (cursor != null) {
+            cursor.use { c ->
+                if (c.moveToFirst()) name = c.getString(0)
+            }
+        }
+        name
     }.getOrNull()
 
     private fun guessQuant(name: String): String {
