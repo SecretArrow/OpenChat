@@ -45,7 +45,10 @@ jobs:
           git clone --depth 1 --branch vulkan-sdk-1.4.309.0 https://github.com/KhronosGroup/SPIRV-Headers /tmp/spirv-headers-src
           cmake -S /tmp/spirv-headers-src -B /tmp/spirv-headers-build -DCMAKE_INSTALL_PREFIX=/tmp/spirv-headers-install >/dev/null
           cmake --install /tmp/spirv-headers-build >/dev/null
-          echo "SPIRV_HEADERS_DIR=/tmp/spirv-headers-install/lib/cmake/SPIRV-Headers" >> "$GITHUB_ENV"
+          # Config lands in <prefix>/share/cmake/SPIRV-Headers (DATADIR) — detect it.
+          SP_DIR="$(dirname "$(find /tmp/spirv-headers-install -name SPIRV-HeadersConfig.cmake | head -1)")"
+          test -n "$SP_DIR" && test -f "$SP_DIR/SPIRV-HeadersConfig.cmake"
+          echo "SPIRV_HEADERS_DIR=$SP_DIR" >> "$GITHUB_ENV"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
