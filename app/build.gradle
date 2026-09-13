@@ -38,6 +38,15 @@ android {
         externalNativeBuild {
             cmake {
                 arguments '-DANDROID_STL=c++_static'
+                // ggml-vulkan needs the host SPIRV-Headers cmake config; the
+                // NDK cross-configure cannot see host prefixes, so CI exports
+                // SPIRV_HEADERS_DIR (pinned Khronos install) and we forward it.
+                // Without the env var (plain local builds) the Vulkan backend
+                // stays off — see CMakeLists.txt glslc guard.
+                def spDir = System.getenv('SPIRV_HEADERS_DIR')
+                if (spDir != null && !spDir.isEmpty()) {
+                    arguments "-DSPIRV-Headers_DIR=${spDir}"
+                }
             }
         }
     }
