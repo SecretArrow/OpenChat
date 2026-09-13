@@ -53,7 +53,7 @@ jobs:
           # ggml-vulkan needs the SPIRV-Headers CMake config package. Host
           # prefixes are invisible to the NDK cross-configure (root-path
           # filtering), so provide a pinned Khronos install explicitly.
-          git clone --depth 1 --branch sdk-1.4.309.0 https://github.com/KhronosGroup/SPIRV-Headers /tmp/spirv-headers-src
+          git clone --depth 1 --branch vulkan-sdk-1.4.309.0 https://github.com/KhronosGroup/SPIRV-Headers /tmp/spirv-headers-src
           cmake -S /tmp/spirv-headers-src -B /tmp/spirv-headers-build -DCMAKE_INSTALL_PREFIX=/tmp/spirv-headers-install >/dev/null
           cmake --install /tmp/spirv-headers-build >/dev/null
           echo "SPIRV_HEADERS_DIR=/tmp/spirv-headers-install/lib/cmake/SPIRV-Headers" >> "$GITHUB_ENV"
