@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathBuilder
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 
 /**
@@ -27,11 +28,11 @@ object AppIcons {
     /** Chat bubble icon. */
     val Chat: ImageVector = makeIcon("Chat", evenOdd = false) {
         moveTo(4.0f, 5.0f)
-        cubicTo(4.0f, 3.9f, 4.9f, 3.0f, 6.0f, 3.0f)
+        curveTo(4.0f, 3.9f, 4.9f, 3.0f, 6.0f, 3.0f)
         lineTo(18.0f, 3.0f)
-        cubicTo(19.1f, 3.0f, 20.0f, 3.9f, 20.0f, 5.0f)
+        curveTo(19.1f, 3.0f, 20.0f, 3.9f, 20.0f, 5.0f)
         lineTo(20.0f, 14.0f)
-        cubicTo(20.0f, 15.1f, 19.1f, 16.0f, 18.0f, 16.0f)
+        curveTo(20.0f, 15.1f, 19.1f, 16.0f, 18.0f, 16.0f)
         lineTo(9.0f, 16.0f)
         lineTo(4.0f, 20.5f)
         close()
@@ -72,15 +73,15 @@ object AppIcons {
     /** Folder icon. */
     val Folder: ImageVector = makeIcon("Folder", evenOdd = false) {
         moveTo(3.0f, 5.0f)
-        cubicTo(3.0f, 4.45f, 3.45f, 4.0f, 4.0f, 4.0f)
+        curveTo(3.0f, 4.45f, 3.45f, 4.0f, 4.0f, 4.0f)
         lineTo(9.2f, 4.0f)
         lineTo(11.2f, 6.0f)
         lineTo(20.0f, 6.0f)
-        cubicTo(20.55f, 6.0f, 21.0f, 6.45f, 21.0f, 7.0f)
+        curveTo(20.55f, 6.0f, 21.0f, 6.45f, 21.0f, 7.0f)
         lineTo(21.0f, 18.0f)
-        cubicTo(21.0f, 18.55f, 20.55f, 19.0f, 20.0f, 19.0f)
+        curveTo(21.0f, 18.55f, 20.55f, 19.0f, 20.0f, 19.0f)
         lineTo(4.0f, 19.0f)
-        cubicTo(3.45f, 19.0f, 3.0f, 18.55f, 3.0f, 18.0f)
+        curveTo(3.45f, 19.0f, 3.0f, 18.55f, 3.0f, 18.0f)
         close()
     }
 
@@ -89,33 +90,33 @@ object AppIcons {
         moveTo(10.3f, 3.0f)
         lineTo(13.7f, 3.0f)
         lineTo(14.2f, 5.5f)
-        cubicTo(14.8f, 5.7f, 15.4f, 6.0f, 15.9f, 6.4f)
+        curveTo(14.8f, 5.7f, 15.4f, 6.0f, 15.9f, 6.4f)
         lineTo(18.3f, 5.3f)
         lineTo(20.5f, 8.7f)
         lineTo(18.5f, 10.3f)
-        cubicTo(18.6f, 10.9f, 18.6f, 11.1f, 18.5f, 11.7f)
+        curveTo(18.6f, 10.9f, 18.6f, 11.1f, 18.5f, 11.7f)
         lineTo(20.5f, 13.3f)
         lineTo(18.3f, 16.7f)
         lineTo(15.9f, 15.6f)
-        cubicTo(15.4f, 16.0f, 14.8f, 16.3f, 14.2f, 16.5f)
+        curveTo(15.4f, 16.0f, 14.8f, 16.3f, 14.2f, 16.5f)
         lineTo(13.7f, 19.0f)
         lineTo(10.3f, 19.0f)
         lineTo(9.8f, 16.5f)
-        cubicTo(9.2f, 16.3f, 8.6f, 16.0f, 8.1f, 15.6f)
+        curveTo(9.2f, 16.3f, 8.6f, 16.0f, 8.1f, 15.6f)
         lineTo(5.7f, 16.7f)
         lineTo(3.5f, 13.3f)
         lineTo(5.5f, 11.7f)
-        cubicTo(5.4f, 11.1f, 5.4f, 10.9f, 5.5f, 10.3f)
+        curveTo(5.4f, 11.1f, 5.4f, 10.9f, 5.5f, 10.3f)
         lineTo(3.5f, 8.7f)
         lineTo(5.7f, 5.3f)
         lineTo(8.1f, 6.4f)
-        cubicTo(8.6f, 6.0f, 9.2f, 5.7f, 9.8f, 5.5f)
+        curveTo(8.6f, 6.0f, 9.2f, 5.7f, 9.8f, 5.5f)
         close()
         moveTo(12.0f, 9.0f)
-        cubicTo(10.34f, 9.0f, 9.0f, 10.34f, 9.0f, 12.0f)
-        cubicTo(9.0f, 13.66f, 10.34f, 15.0f, 12.0f, 15.0f)
-        cubicTo(13.66f, 15.0f, 15.0f, 13.66f, 15.0f, 12.0f)
-        cubicTo(15.0f, 10.34f, 13.66f, 9.0f, 12.0f, 9.0f)
+        curveTo(10.34f, 9.0f, 9.0f, 10.34f, 9.0f, 12.0f)
+        curveTo(9.0f, 13.66f, 10.34f, 15.0f, 12.0f, 15.0f)
+        curveTo(13.66f, 15.0f, 15.0f, 13.66f, 15.0f, 12.0f)
+        curveTo(15.0f, 10.34f, 13.66f, 9.0f, 12.0f, 9.0f)
         close()
     }
 
@@ -203,7 +204,7 @@ object AppIcons {
 private inline fun makeIcon(
     name: String,
     evenOdd: Boolean,
-    block: PathBuilder.() -> Unit,
+    crossinline block: PathBuilder.() -> Unit,
 ): ImageVector = ImageVector.Builder(
     name = name,
     defaultWidth = 24.dp,

@@ -56,13 +56,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.isUnspecified
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.nativeKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
@@ -292,8 +292,8 @@ private fun TerminalView(
                 clipboard.setText(AnnotatedString(session.buffer().dumpPlain()))
             }) { Text("Copy") }
             TextButton(onClick = {
-                val t = clipboard.text?.text
-                if (!t.isNullOrEmpty()) session.write(t)
+                val t = clipboard.getText()
+                if (t.text.isNotEmpty()) session.write(t.text)
             }) { Text("Paste") }
             TextButton(onClick = {
                 AppGraph.settings.update {
