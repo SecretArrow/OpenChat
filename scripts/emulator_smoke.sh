@@ -129,7 +129,11 @@ ui_tap() { # $1=human label; remaining args = attr value pairs tried in order
         echo " …"
       fi
     fi
-    adb shell input swipe "$SWIPE_X" "$SWIPE_Y1" "$SWIPE_X" "$SWIPE_Y2" 250   # scroll down, retry
+    if [ "$tries" -ge 5 ]; then
+      adb shell input swipe "$SWIPE_X" "$SWIPE_Y2" "$SWIPE_X" "$SWIPE_Y1" 250   # scroll back up
+    else
+      adb shell input swipe "$SWIPE_X" "$SWIPE_Y1" "$SWIPE_X" "$SWIPE_Y2" 250 # scroll down
+    fi
     sleep 2
     tries=$((tries + 1))
   done
@@ -141,11 +145,33 @@ shot() { # $1 = slug
   adb exec-out screencap -p > "smoke-shots/$1.png" 2>/dev/null || true
 }
 
+# Make sure we are on the Settings root screen. The Ubuntu status card sits at
+# the very top of that screen, so an Install/Reinstall button in the dump is a
+# reliable marker. Recovery path: re-launch the activity (returns to Chat, the
+# start destination) and tap the bottom-nav Settings item.
+ensure_settings_root() {
+  local tries=0 XML
+  while [ "$tries" -lt 3 ]; do
+    ui_dump
+    XML="$(adb shell cat /sdcard/window_dump.xml 2>/dev/null | tr -d '\r' || true)"
+    if printf '%s' "$XML" | grep -Eq 'text="(Re)?install"'; then
+      return 0
+    fi
+    echo "  [nav] not on Settings root (attempt $tries) — tapping bottom-nav Settings"
+    ui_tap "bottom-nav Settings" content-desc Settings text Settings
+    sleep 1.5
+    tries=$((tries + 1))
+  done
+  echo "  [nav] recovery: re-launching MainActivity"
+  adb shell am start -W -n "$COMPONENT" >/dev/null 2>&1 || true
+  sleep 3
+  ui_tap "bottom-nav Settings (recovery)" content-desc Settings text Settings
+  sleep 1.5
+}
+
 # Visit a Settings sub-screen by its exact row label and return to Settings.
 visit_subscreen() { # $1 = row label, $2 = slug
-  adb shell input keyevent 4          # ensure we are at Settings root
-  sleep 1
-  ui_tap "bottom-nav Settings" content-desc Settings text Settings
+  ensure_settings_root
   sleep 1
   ui_tap "settings row: $1" text "$1" content-desc "$1"
   sleep 2.5
