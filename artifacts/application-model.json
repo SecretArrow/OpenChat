@@ -16,7 +16,7 @@
     "com.openchat.android.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
   ],
   "apk": "/home/runner/work/OpenChat/OpenChat/release/OpenChat-x86_64.apk",
-  "discovered_at": "2026-09-14T09:15:02.560134+00:00",
+  "discovered_at": "2026-09-14T09:20:09.070491+00:00",
   "component": "com.openchat.android/com.openchat.android.MainActivity",
   "activities": [
     "com.openchat.android.MainActivity"
