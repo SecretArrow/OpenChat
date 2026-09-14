@@ -107,6 +107,7 @@ ui_tap() { # $1=human label; remaining args = attr value pairs tried in order
   local PAIRS=("$@")
   local tries=0 c="" XML=""
   while [ "$tries" -lt 8 ]; do
+    close_keyboard
     ui_dump
     XML="$(adb shell cat /sdcard/window_dump.xml 2>/dev/null | tr -d '\r' || true)"
     if [ -z "$XML" ]; then
@@ -145,6 +146,20 @@ shot() { # $1 = slug
   adb exec-out screencap -p > "smoke-shots/$1.png" 2>/dev/null || true
 }
 
+# Input-bearing screens (Terminal, Terminal settings) auto-focus a text field
+# and raise the soft keyboard. The IME window covers the bottom navigation and
+# eats every tap/scroll — taps land on keyboard KEYS instead. Close it first
+# (BACK with an open IME only hides the keyboard, it does not navigate).
+close_keyboard() {
+  local shown
+  shown="$(adb shell dumpsys input_method 2>/dev/null | tr -d '\r' | grep -c 'mInputShown=true' || true)"
+  if [ "${shown:-0}" -ge 1 ]; then
+    adb shell input keyevent 4
+    sleep 1
+    echo "  [ime] soft keyboard dismissed"
+  fi
+}
+
 # Make sure we are on the Settings root screen. The Ubuntu status card sits at
 # the very top of that screen, so an Install/Reinstall button in the dump is a
 # reliable marker. Recovery path: re-launch the activity (returns to Chat, the
@@ -152,6 +167,7 @@ shot() { # $1 = slug
 ensure_settings_root() {
   local tries=0 XML
   while [ "$tries" -lt 3 ]; do
+    close_keyboard
     ui_dump
     XML="$(adb shell cat /sdcard/window_dump.xml 2>/dev/null | tr -d '\r' || true)"
     if printf '%s' "$XML" | grep -Eq 'text="(Re)?install"'; then
@@ -165,6 +181,7 @@ ensure_settings_root() {
   echo "  [nav] recovery: re-launching MainActivity"
   adb shell am start -W -n "$COMPONENT" >/dev/null 2>&1 || true
   sleep 3
+  close_keyboard
   ui_tap "bottom-nav Settings (recovery)" content-desc Settings text Settings
   sleep 1.5
 }
@@ -175,6 +192,7 @@ visit_subscreen() { # $1 = row label, $2 = slug
   sleep 1
   ui_tap "settings row: $1" text "$1" content-desc "$1"
   sleep 2.5
+  close_keyboard   # sub-screen may have auto-focused an input (Terminal settings)
   check_alive "screen: $1"
   check_no_fatal
   shot "$2"
@@ -191,6 +209,7 @@ shot "01-chat-cold"
 adb shell input keyevent KEYCODE_WAKEUP || true   # screen must be on for taps
 ui_tap "bottom-nav Terminal" content-desc Terminal text Terminal
 sleep 2.5
+close_keyboard   # Terminal auto-focuses its input — the IME would cover the nav bar and the screenshot
 check_alive "screen: Terminal"
 check_no_fatal
 shot "02-terminal"
