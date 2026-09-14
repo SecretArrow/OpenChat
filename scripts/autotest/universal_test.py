@@ -220,6 +220,7 @@ class UiNode:
     scrollable: bool = False
     enabled: bool = True
     bounds: tuple[int, int, int, int] = (0, 0, 0, 0)
+    package: str = "" 
 
     @property
     def cx(self) -> int:
@@ -266,6 +267,7 @@ def parse_ui(xml: str) -> list[UiNode]:
                 scrollable=a.get("scrollable") == "true",
                 enabled=a.get("enabled", "true") == "true",
                 bounds=bounds_of(a.get("bounds", "")),
+                package=a.get("package", ""), 
             )
         )
         for child in el:
@@ -277,11 +279,37 @@ def parse_ui(xml: str) -> list[UiNode]:
     return nodes
 
 
-def actionable(nodes: list[UiNode]) -> list[UiNode]:
-    """Interactive candidates: clickable containers/buttons/fields/switches."""
+# Window packages that belong to the OS layer, not to other user apps —
+# tapping these is fine (permission dialogs, system UI overlays).
+SYSTEM_WINDOW_PKGS = {
+    "android", "com.android.systemui", "com.android.permissioncontroller",
+    "com.google.android.permissioncontroller",
+}
+
+
+def belongs_to_app(nodes: list[UiNode], pkg: str) -> bool:
+    """True when the current window (the dump) belongs to the app under test.
+
+    uiautomator dumps only the ACTIVE window: if none of the top-level nodes
+    carry the app's package (and it isn't a known system window), the tester
+    has wandered onto the launcher or another app — the explorer must
+    refocus instead of tapping foreign UI.
+    """
+    tops = [n for n in nodes if n.package]
+    if not tops:
+        return True  # dump without package attrs — cannot judge, assume app
+    return any(n.package == pkg or n.package in SYSTEM_WINDOW_PKGS for n in tops)
+
+
+def actionable(nodes: list[UiNode], pkg: str | None = None) -> list[UiNode]:
+    """Interactive candidates: clickable containers/buttons/fields/switches.
+    When [pkg] is given, nodes of foreign apps are excluded so the explorer
+    never taps another application's UI (launchers, search boxes, …)."""
     out = []
     for n in nodes:
         if not n.visible or not n.enabled:
+            continue
+        if pkg and n.package and n.package != pkg and n.package not in SYSTEM_WINDOW_PKGS:
             continue
         is_input = "EditText" in n.cls
         is_clickable = n.clickable and (n.text or n.desc or n.res_id or "Button" in n.cls or "EditText" in n.cls)
@@ -338,6 +366,7 @@ class Stats:
 class Engine:
     def __init__(self, apk: str, mode: str, max_actions: int, max_seconds: int, seed: int, out: str):
         self.apk = apk
+        self.known_pids: set[str] = set()
         self.mode = mode.upper()
         self.max_actions = max_actions
         self.deadline = time.time() + max_seconds
@@ -439,23 +468,62 @@ class Engine:
         raise RuntimeError("aapt not found — ANDROID_HOME/build-tools missing?")
 
     # --- health ---------------------------------------------------------------
+    def note_pid(self) -> None:
+        """Record every pid the app is seen with (it changes across
+        force-stop/restart) so crash lines can be attributed precisely."""
+        cur = self.adb.pid(self.app["package"])
+        if cur:
+            self.known_pids.add(cur)
+
     def crash_scan(self) -> str | None:
+        """Scan logcat for crashes ATTRIBUTED TO THIS APP (by package or a
+        known pid of the app). System noise — audioserver SIGABRT, other
+        apps' exceptions — must not fail the gate (DEEP run 34825641266
+        failed on an emulator audioserver abort while the app was healthy)."""
         cat = self.adb.logcat(1200)
-        for pat in ("FATAL EXCEPTION", "beginning of crash"):
-            idx = cat.find(pat)
-            if idx >= 0:
-                return cat[idx: idx + 3000]
+        lines = cat.split("\n")
+        pkg = self.app["package"]
+        for i, line in enumerate(lines):
+            if "FATAL EXCEPTION" in line:
+                # Java crash: attribute via "Process: <pkg>" / "PID: <n>" in the block.
+                block = "\n".join(lines[i: i + 25])
+                m_pkg = re.search(r"Process:\s*([\w.]+)", block)
+                m_pid = re.search(r"PID:\s*(\d+)", block)
+                if (m_pkg and m_pkg.group(1) == pkg) or (m_pid and m_pid.group(1) in self.known_pids):
+                    return cat[cat.find(line): cat.find(line) + 3000]
+                # No attribution info at all → do not blame the app blindly.
+                continue
+            if "Fatal signal" in line:
+                # Native crash: "date time PID TID F tag : msg".
+                parts = line.split()
+                if len(parts) >= 4 and parts[2] in self.known_pids:
+                    idx = cat.find(line)
+                    return cat[idx: idx + 3000]
+                continue
+            if "SIGSEGV" in line and "Fatal signal" not in line:
+                parts = line.split()
+                if len(parts) >= 4 and parts[2] in self.known_pids:
+                    idx = cat.find(line)
+                    return cat[idx: idx + 2000]
         return None
 
     def anr_scan(self) -> str | None:
         cat = self.adb.logcat(800)
         idx = cat.find("ANR in ")
-        if idx >= 0:
-            return cat[idx: idx + 1500]
+        if idx < 0:
+            return None
+        window = cat[idx: idx + 400]
+        pkg = self.app["package"]
+        m = re.search(r"ANR in ([\w.$]+)", window)
+        if m and m.group(1).startswith(pkg):
+            return window
         return None
 
     def alive(self) -> bool:
-        return bool(self.adb.pid(self.app["package"]))
+        p = self.adb.pid(self.app["package"])
+        if p:
+            self.known_pids.add(p)
+        return bool(p)
 
     def health(self, after: str) -> None:
         """Post-action health gate (§14, §15)."""
@@ -493,6 +561,7 @@ class Engine:
         if not ok:
             raise RuntimeError(f"launch failed: {out[:200]}")
         self.settle(5)
+        self.note_pid()
         self.health("cold launch")
         self.stats.screens_seen.add("launch")
         self.screenshot("00-launch")
@@ -503,7 +572,7 @@ class Engine:
     def dialog_cancel(self) -> bool:
         """If a confirmation dialog is up, press its CANCEL word (§7)."""
         nodes = self.current_screen()
-        for n in actionable(nodes):
+        for n in actionable(nodes, self.app["package"]):
             blob = (n.text or n.desc).lower().strip()
             if blob in CANCEL_WORDS:
                 self.adb.tap(n.cx, n.cy)
@@ -522,9 +591,18 @@ class Engine:
                 self.swipe_up()
                 self.settle(1)
                 continue
+            if not belongs_to_app(nodes, self.app["package"]):
+                # The explorer escaped to the launcher/another app (DEEP run
+                # 34825641266 tapped the Google search widget) — refocus.
+                self.trace_add("refocus", reason="window is not the app under test")
+                self.adb.launch(self.app["component"])
+                self.settle(3)
+                self.note_pid()
+                actions += 1
+                continue
             root_sig = "|".join(sorted({n.cls for n in nodes})[:8])
             self.stats.screens_seen.add(root_sig[:80])
-            acts = actionable(nodes)
+            acts = actionable(nodes, self.app["package"])
             self.stats.elements_found = max(self.stats.elements_found, len(acts))
             nxt = None
             for n in acts:
@@ -672,7 +750,13 @@ class Engine:
             if time.time() > self.deadline:
                 return
             nodes = self.current_screen()
-            acts = [n for n in actionable(nodes) if safety(n, allow_install=False).allowed]
+            if not belongs_to_app(nodes, self.app["package"]):
+                self.trace_add("refocus", reason="random: window is not the app under test")
+                self.adb.launch(self.app["component"])
+                self.settle(3)
+                self.note_pid()
+                continue
+            acts = [n for n in actionable(nodes, self.app["package"]) if safety(n, allow_install=False).allowed]
             if not acts:
                 self.adb.back()
                 self.settle(1)
