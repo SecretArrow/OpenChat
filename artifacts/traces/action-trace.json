@@ -1,18 +1,18 @@
 [
  {
-  "t": "2026-09-14T09:53:15.709191+00:00",
+  "t": "2026-09-14T10:11:24.513573+00:00",
   "action": "install",
   "apk": "OpenChat-x86_64.apk"
  },
  {
-  "t": "2026-09-14T09:53:18.923115+00:00",
+  "t": "2026-09-14T10:11:27.371672+00:00",
   "action": "launch",
   "component": "com.openchat.android/com.openchat.android.MainActivity",
   "ok": true,
-  "raw": "Starting: Intent { cmp=com.openchat.android/.MainActivity }\nStatus: ok\nLaunchState: COLD\nActivity: com.openchat.android/.MainActivity\nTotalTime: 770\nWaitTime: 778\nComplete\n"
+  "raw": "Starting: Intent { cmp=com.openchat.android/.MainActivity }\nStatus: ok\nLaunchState: COLD\nActivity: com.openchat.android/.MainActivity\nTotalTime: 615\nWaitTime: 618\nComplete\n"
  },
  {
-  "t": "2026-09-14T09:53:25.840622+00:00",
+  "t": "2026-09-14T10:11:34.059287+00:00",
   "action": "tap",
   "target": "android.widget.EditText",
   "bounds": [
@@ -24,7 +24,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:53:33.637458+00:00",
+  "t": "2026-09-14T10:11:41.756578+00:00",
   "action": "tap",
   "target": "to",
   "bounds": [
@@ -36,7 +36,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:53:37.742329+00:00",
+  "t": "2026-09-14T10:11:45.870143+00:00",
   "action": "tap",
   "target": "to h",
   "bounds": [
@@ -48,7 +48,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:53:41.872700+00:00",
+  "t": "2026-09-14T10:11:49.973482+00:00",
   "action": "tap",
   "target": "to hh",
   "bounds": [
@@ -60,7 +60,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:53:45.993258+00:00",
+  "t": "2026-09-14T10:11:54.100453+00:00",
   "action": "tap",
   "target": "to hhh",
   "bounds": [
@@ -72,7 +72,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:53:51.694148+00:00",
+  "t": "2026-09-14T10:11:59.782245+00:00",
   "action": "tap",
   "target": "to hhhh",
   "bounds": [
@@ -84,7 +84,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:53:59.413886+00:00",
+  "t": "2026-09-14T10:12:07.491330+00:00",
   "action": "tap",
   "target": "to hhh toh",
   "bounds": [
@@ -96,7 +96,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:54:03.527937+00:00",
+  "t": "2026-09-14T10:12:11.605722+00:00",
   "action": "tap",
   "target": "to hhh to hh",
   "bounds": [
@@ -108,7 +108,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:54:07.659457+00:00",
+  "t": "2026-09-14T10:12:15.726952+00:00",
   "action": "tap",
   "target": "to hhh to hhh",
   "bounds": [
@@ -120,7 +120,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:54:11.789339+00:00",
+  "t": "2026-09-14T10:12:19.839906+00:00",
   "action": "tap",
   "target": "to hhh to hhhh",
   "bounds": [
@@ -132,7 +132,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:54:17.500961+00:00",
+  "t": "2026-09-14T10:12:25.550931+00:00",
   "action": "tap",
   "target": "to hhh to hhhhh",
   "bounds": [
@@ -144,418 +144,418 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:54:32.028509+00:00",
+  "t": "2026-09-14T10:12:39.922863+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:54:43.693991+00:00",
+  "t": "2026-09-14T10:12:51.639921+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:54:58.940990+00:00",
+  "t": "2026-09-14T10:13:06.871434+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:55:10.781068+00:00",
+  "t": "2026-09-14T10:13:18.521794+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:55:26.093506+00:00",
+  "t": "2026-09-14T10:13:33.790286+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:55:37.777506+00:00",
+  "t": "2026-09-14T10:13:45.439823+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:55:45.860615+00:00",
+  "t": "2026-09-14T10:13:53.488074+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:55:57.526852+00:00",
+  "t": "2026-09-14T10:14:05.115480+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:56:05.626111+00:00",
+  "t": "2026-09-14T10:14:13.139154+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:56:31.777085+00:00",
+  "t": "2026-09-14T10:14:39.142400+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:56:47.076873+00:00",
+  "t": "2026-09-14T10:14:54.357993+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:57:02.428209+00:00",
+  "t": "2026-09-14T10:15:09.571535+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:57:10.558016+00:00",
+  "t": "2026-09-14T10:15:17.655976+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:57:18.663282+00:00",
+  "t": "2026-09-14T10:15:25.704341+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:57:26.785869+00:00",
+  "t": "2026-09-14T10:15:33.771519+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:57:45.725923+00:00",
+  "t": "2026-09-14T10:15:52.671688+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:57:53.828757+00:00",
+  "t": "2026-09-14T10:16:00.742640+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:58:16.546226+00:00",
+  "t": "2026-09-14T10:16:23.288896+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:58:24.676128+00:00",
+  "t": "2026-09-14T10:16:31.355988+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:58:32.793964+00:00",
+  "t": "2026-09-14T10:16:39.506787+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:58:48.245822+00:00",
+  "t": "2026-09-14T10:16:54.889071+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:59:03.695758+00:00",
+  "t": "2026-09-14T10:17:10.189218+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:59:33.877402+00:00",
+  "t": "2026-09-14T10:17:40.141785+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:59:56.636151+00:00",
+  "t": "2026-09-14T10:18:02.821441+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:00:04.759451+00:00",
+  "t": "2026-09-14T10:18:10.937920+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:00:16.611994+00:00",
+  "t": "2026-09-14T10:18:22.774535+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:00:32.145074+00:00",
+  "t": "2026-09-14T10:18:38.292138+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:00:47.641580+00:00",
+  "t": "2026-09-14T10:18:53.769917+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:01:03.059159+00:00",
+  "t": "2026-09-14T10:19:09.239327+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:01:11.258195+00:00",
+  "t": "2026-09-14T10:19:17.387254+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:01:19.426871+00:00",
+  "t": "2026-09-14T10:19:25.534216+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:01:27.644179+00:00",
+  "t": "2026-09-14T10:19:33.660194+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:01:35.777225+00:00",
+  "t": "2026-09-14T10:19:41.858072+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:01:47.736045+00:00",
+  "t": "2026-09-14T10:19:53.671709+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:02:10.609223+00:00",
+  "t": "2026-09-14T10:20:16.586746+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:02:29.891819+00:00",
+  "t": "2026-09-14T10:20:35.756106+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:02:41.741729+00:00",
+  "t": "2026-09-14T10:20:47.605096+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:02:53.627058+00:00",
+  "t": "2026-09-14T10:20:59.523785+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:03:01.824873+00:00",
+  "t": "2026-09-14T10:21:07.709835+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:03:09.957485+00:00",
+  "t": "2026-09-14T10:21:15.948927+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:03:29.390361+00:00",
+  "t": "2026-09-14T10:21:35.433250+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:03:37.508587+00:00",
+  "t": "2026-09-14T10:21:43.706513+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:03:52.974745+00:00",
+  "t": "2026-09-14T10:21:59.322407+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:04:08.623959+00:00",
+  "t": "2026-09-14T10:22:15.022763+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:04:16.758692+00:00",
+  "t": "2026-09-14T10:22:23.287395+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:04:32.341206+00:00",
+  "t": "2026-09-14T10:22:38.904849+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:04:40.490664+00:00",
+  "t": "2026-09-14T10:22:47.141106+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:04:48.740425+00:00",
+  "t": "2026-09-14T10:22:55.256432+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:05:00.656841+00:00",
+  "t": "2026-09-14T10:23:07.159858+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:05:08.910915+00:00",
+  "t": "2026-09-14T10:23:15.423976+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:05:24.591693+00:00",
+  "t": "2026-09-14T10:23:31.071503+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:05:47.675086+00:00",
+  "t": "2026-09-14T10:23:54.389628+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:05:55.856870+00:00",
+  "t": "2026-09-14T10:24:02.685680+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:06:04.058932+00:00",
+  "t": "2026-09-14T10:24:10.873877+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:06:12.256913+00:00",
+  "t": "2026-09-14T10:24:19.155698+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:06:24.189875+00:00",
+  "t": "2026-09-14T10:24:31.140485+00:00",
   "action": "refocus",
   "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T10:06:37.327861+00:00",
+  "t": "2026-09-14T10:24:44.347971+00:00",
   "action": "fuzz-input",
   "length": 0,
   "sample": ""
  },
  {
-  "t": "2026-09-14T10:06:52.588784+00:00",
+  "t": "2026-09-14T10:24:59.768840+00:00",
   "action": "fuzz-input",
   "length": 1,
   "sample": "a"
  },
  {
-  "t": "2026-09-14T10:07:09.543910+00:00",
+  "t": "2026-09-14T10:25:17.274790+00:00",
   "action": "fuzz-input",
   "length": 300,
   "sample": "xxxxxxxxxxxxxxxxxxxxxxxx"
  },
  {
-  "t": "2026-09-14T10:07:24.466740+00:00",
+  "t": "2026-09-14T10:25:32.344327+00:00",
   "action": "fuzz-input",
   "length": 11,
   "sample": "h\u00e9llo w\u00f6rld"
  },
  {
-  "t": "2026-09-14T10:07:39.435498+00:00",
+  "t": "2026-09-14T10:25:47.503051+00:00",
   "action": "fuzz-input",
   "length": 13,
   "sample": "\ud83c\udf89\ud83d\ude80 emoji test"
  },
  {
-  "t": "2026-09-14T10:07:54.746204+00:00",
+  "t": "2026-09-14T10:26:03.156870+00:00",
   "action": "fuzz-input",
   "length": 10,
   "sample": "1234567890"
  },
  {
-  "t": "2026-09-14T10:08:10.040905+00:00",
+  "t": "2026-09-14T10:26:18.594301+00:00",
   "action": "fuzz-input",
   "length": 3,
   "sample": "-42"
  },
  {
-  "t": "2026-09-14T10:08:25.364365+00:00",
+  "t": "2026-09-14T10:26:34.178703+00:00",
   "action": "fuzz-input",
   "length": 7,
   "sample": "3.14159"
  },
  {
-  "t": "2026-09-14T10:08:40.628770+00:00",
+  "t": "2026-09-14T10:26:49.746057+00:00",
   "action": "fuzz-input",
   "length": 12,
   "sample": "   spaces   "
  },
  {
-  "t": "2026-09-14T10:08:55.564507+00:00",
+  "t": "2026-09-14T10:27:04.708415+00:00",
   "action": "fuzz-input",
   "length": 25,
   "sample": "<script>alert(1)</script"
  },
  {
-  "t": "2026-09-14T10:09:10.320129+00:00",
+  "t": "2026-09-14T10:27:19.549490+00:00",
   "action": "fuzz-input",
   "length": 22,
   "sample": "'; DROP TABLE users;--"
  },
  {
-  "t": "2026-09-14T10:09:25.696947+00:00",
+  "t": "2026-09-14T10:27:34.976434+00:00",
   "action": "fuzz-input",
   "length": 6,
   "sample": "%s%n%d"
  },
  {
-  "t": "2026-09-14T10:09:41.100011+00:00",
+  "t": "2026-09-14T10:27:50.424813+00:00",
   "action": "fuzz-input",
   "length": 18,
   "sample": "\\\\\\ backslashes \\\\"
  },
  {
-  "t": "2026-09-14T10:09:55.945360+00:00",
+  "t": "2026-09-14T10:28:05.346764+00:00",
   "action": "fuzz-input",
   "length": 7,
   "sample": "\u65e5\u672c\u8a9e\u30c6\u30ad\u30b9\u30c8"
  },
  {
-  "t": "2026-09-14T10:10:11.296211+00:00",
+  "t": "2026-09-14T10:28:20.828480+00:00",
   "action": "fuzz-input",
   "length": 4,
   "sample": "null"
  },
  {
-  "t": "2026-09-14T10:10:26.815202+00:00",
+  "t": "2026-09-14T10:28:36.397136+00:00",
   "action": "fuzz-input",
   "length": 9,
   "sample": "undefined"
  },
  {
-  "t": "2026-09-14T10:10:35.344704+00:00",
+  "t": "2026-09-14T10:28:44.959152+00:00",
   "action": "lifecycle",
   "step": "rotate"
  },
  {
-  "t": "2026-09-14T10:10:38.226487+00:00",
+  "t": "2026-09-14T10:28:47.862277+00:00",
   "action": "lifecycle",
   "step": "rotate-back"
  },
  {
-  "t": "2026-09-14T10:10:41.208450+00:00",
+  "t": "2026-09-14T10:28:50.915446+00:00",
   "action": "lifecycle",
   "step": "background"
  },
  {
-  "t": "2026-09-14T10:10:44.646121+00:00",
+  "t": "2026-09-14T10:28:54.309109+00:00",
   "action": "lifecycle",
   "step": "foreground"
  },
  {
-  "t": "2026-09-14T10:10:47.501041+00:00",
+  "t": "2026-09-14T10:28:57.392610+00:00",
   "action": "lifecycle",
   "step": "lock"
  },
  {
-  "t": "2026-09-14T10:10:50.972011+00:00",
+  "t": "2026-09-14T10:29:00.847835+00:00",
   "action": "lifecycle",
   "step": "unlock"
  },
  {
-  "t": "2026-09-14T10:10:54.346740+00:00",
+  "t": "2026-09-14T10:29:04.237164+00:00",
   "action": "lifecycle",
   "step": "force-stop"
  },
  {
-  "t": "2026-09-14T10:10:59.206134+00:00",
+  "t": "2026-09-14T10:29:09.036763+00:00",
   "action": "failure",
   "kind": "dead",
   "detail": "app process is gone"
