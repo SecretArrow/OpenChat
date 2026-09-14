@@ -1,8 +1,11 @@
 package com.openchat.android.ubuntu
 
 import android.content.Context
+import android.net.Uri
 import android.os.Build
+import android.os.StatFs
 import com.openchat.android.core.model.ErrorInfo
+import com.openchat.android.core.model.RepairAction
 import com.openchat.android.core.model.UbuntuState
 import com.openchat.android.core.model.UbuntuStatus
 import com.openchat.android.core.storage.JsonStore
@@ -17,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -46,6 +50,8 @@ class ErrorInfoException(val info: ErrorInfo) : Exception(info.detail)
  *  - [repair]: re-verify/re-extract over the existing rootfs (keeps /root),
  *    `apt-get -f install`, smoke test.
  *  - [update]: apt update + upgrade + tools re-check.
+ *  - [export]: pack the whole rootfs into a user-picked .tar.gz backup.
+ *  - [import]: restore a .tar.gz backup into a fresh, validated rootfs.
  *  - [reset]: delete the rootfs and cached tarballs.
  *  - [exec]/[execStream]: run real commands inside the rootfs via proot.
  *  - [sessionCommand]: the SessionSpec used for every interactive PTY session.
@@ -111,6 +117,12 @@ class UbuntuRuntime(
         _status.value.state == UbuntuState.READY &&
             File(rootfsDir(), "bin/bash").exists() &&
             UbuntuFileSystem.prootBin(context).exists()
+
+    /**
+     * True when a usable rootfs exists on disk regardless of the persisted
+     * state — the gate for Export (a broken install can still be backed up).
+     */
+    fun hasRootfs(): Boolean = UbuntuFileSystem.hasRootfs(context)
 
     /**
      * Fast readiness gate for every consumer action (terminal, exec, OpenCode…).
@@ -182,6 +194,24 @@ class UbuntuRuntime(
             RootfsCatalog.ubuntuArchForAbi(abi())
         } catch (e: IllegalArgumentException) {
             return failStep("Unsupported device ABI", e)
+        }
+
+        // ---- pre-flight: honest storage check before any download starts ----
+        val free = try {
+            StatFs(context.filesDir.absolutePath).availableBytes
+        } catch (_: Exception) {
+            -1L
+        }
+        if (free in 0 until MIN_FREE_BYTES) {
+            return failStep(
+                "Not enough free storage",
+                IllegalStateException(
+                    "${free / MB} MB available — the install needs at least ${MIN_FREE_BYTES / MB} MB",
+                ),
+            )
+        }
+        if (free >= 0 && free < WARN_FREE_BYTES) {
+            addLog("[warn] Storage is low (${free / MB} MB free) — download + extraction need roughly ${WARN_FREE_BYTES / MB} MB")
         }
 
         // ---- resolve variant (pinned catalog or advanced override) ----
@@ -343,6 +373,188 @@ class UbuntuRuntime(
     }
 
     /**
+     * Packs the whole rootfs into the user-picked [uri] as a .tar.gz backup
+     * (Export). Works from READY *and* from ERROR — backing up a broken
+     * installation before Reset is exactly the point. Live sessions are closed
+     * first so the archive captures a quiet filesystem. Non-rootfs assets
+     * (proot binary, cache) are not part of the archive — the proot binary is
+     * ABI-specific and re-downloaded automatically on import.
+     */
+    suspend fun export(uri: Uri): Result<Unit> {
+        if (!pipelineRunning.compareAndSet(false, true)) {
+            return Result.failure(
+                ErrorInfoException(Errors.ubuntuFailure("An Ubuntu operation is already running — wait for it to finish")),
+            )
+        }
+        try {
+            val rootfs = rootfsDir()
+            if (!File(rootfs, "bin/bash").isFile) {
+                return failStep(
+                    "Export failed",
+                    IllegalStateException("there is no Ubuntu rootfs to export — install Ubuntu first"),
+                )
+            }
+            setState(UbuntuState.EXPORTING, "Packing the Ubuntu userspace…", 5)
+            try {
+                onReset?.invoke()
+            } catch (e: Exception) {
+                addLog("[warn] pre-export hook failed: ${e.message ?: e.javaClass.simpleName}")
+            }
+            var stats = UbuntuArchive.Stats()
+            withContext(Dispatchers.IO) {
+                val out = context.contentResolver.openOutputStream(uri, "wt")
+                    ?: throw IOException("could not open the destination file for writing")
+                out.use { o ->
+                    stats = UbuntuArchive.write(rootfs, o) { done, total ->
+                        if (total > 0) {
+                            updateProgress(
+                                5 + ((done * 90) / total).toInt().coerceIn(5, 95),
+                                "Exporting userspace… ${done / MB} / ${total / MB} MB",
+                            )
+                        }
+                    }
+                }
+            }
+            addLog(
+                "Export complete: ${stats.files} files, ${stats.dirs} dirs, ${stats.symlinks} symlinks, " +
+                    "${stats.skippedSpecial} special entries skipped (${stats.bytes / MB} MB content)",
+            )
+            val prevState = _status.value.state
+            setState(
+                if (prevState == UbuntuState.READY) UbuntuState.READY else prevState,
+                "Userspace exported — keep this archive safe, Import restores it exactly",
+                100,
+            )
+            return Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return failStep("Export failed", e)
+        } finally {
+            pipelineRunning.set(false)
+        }
+    }
+
+    /**
+     * Restores a .tar.gz backup (or any Ubuntu rootfs tarball) from [uri]:
+     * stream-extracts into a staging dir, validates `bin/bash` (flattens a
+     * single wrapper directory when present), swaps it in place of the current
+     * rootfs, re-asserts DNS and runs a smoke test. A wrong-architecture
+     * archive fails honestly at the smoke test — nothing is left half-broken.
+     */
+    suspend fun import(uri: Uri): Result<Unit> {
+        if (!pipelineRunning.compareAndSet(false, true)) {
+            return Result.failure(
+                ErrorInfoException(Errors.ubuntuFailure("An Ubuntu operation is already running — wait for it to finish")),
+            )
+        }
+        val staging = UbuntuFileSystem.importStagingDir(context)
+        try {
+            setState(UbuntuState.IMPORTING, "Importing the Ubuntu userspace…", 2)
+            try {
+                onReset?.invoke()
+            } catch (e: Exception) {
+                addLog("[warn] pre-import hook failed: ${e.message ?: e.javaClass.simpleName}")
+            }
+            var stats = UbuntuArchive.Stats()
+            withContext(Dispatchers.IO) {
+                staging.deleteRecursively()
+                staging.mkdirs()
+                val size = runCatching {
+                    context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize }
+                }.getOrNull() ?: -1L
+                val ins = context.contentResolver.openInputStream(uri)
+                    ?: throw IOException("could not read the selected archive")
+                ins.use { s ->
+                    stats = UbuntuArchive.extract(s, staging) { read ->
+                        if (size > 0) {
+                            updateProgress(
+                                2 + ((read * 78) / size).toInt().coerceIn(2, 80),
+                                "Importing… ${read / MB} / ${size / MB} MB",
+                            )
+                        }
+                    }
+                }
+            }
+            addLog(
+                "Import extracted: ${stats.files} files, ${stats.dirs} dirs, ${stats.symlinks} symlinks, " +
+                    "${stats.skippedSpecial} special entries skipped",
+            )
+
+            setState(UbuntuState.IMPORTING, "Validating the imported rootfs…", 82)
+            val flattened = withContext(Dispatchers.IO) { UbuntuArchive.normalizeRoot(staging) }
+            if (flattened > 0) addLog("The archive wrapped the rootfs in one directory — flattened")
+
+            setState(UbuntuState.IMPORTING, "Ensuring the proot binary…", 86)
+            proot.ensureProot().getOrElse { return failStep("proot download failed", it) }
+
+            setState(UbuntuState.IMPORTING, "Swapping in the imported rootfs…", 90)
+            val rootfs = rootfsDir()
+            withContext(Dispatchers.IO) {
+                if (rootfs.exists()) rootfs.deleteRecursively()
+                if (!staging.renameTo(rootfs)) {
+                    staging.copyRecursively(rootfs, overwrite = true)
+                    staging.deleteRecursively()
+                }
+                // Re-assert host-side network config (idempotent, keeps APT working).
+                val etc = File(rootfs, "etc").apply { mkdirs() }
+                File(etc, "resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
+                File(etc, "hosts").writeText("127.0.0.1 localhost\n")
+            }
+
+            setState(UbuntuState.IMPORTING, "Running smoke test…", 95)
+            val smoke = runCommand("bash --version && uname -m")
+            val smokeOut = smoke.getOrElse {
+                return failStep(
+                    "Imported rootfs smoke test failed",
+                    IllegalStateException("bash did not start — the archive may target a different device architecture"),
+                )
+            }
+            if (!smokeOut.contains("bash", ignoreCase = true)) {
+                return failStep(
+                    "Imported rootfs failed the smoke test",
+                    IllegalStateException("unexpected tool output: ${smokeOut.lineSequence().firstOrNull()?.take(160) ?: "(empty)"}"),
+                )
+            }
+            val detectedArch = smokeOut.lineSequence().lastOrNull { it.isNotBlank() }?.trim().orEmpty()
+            val arch = when (detectedArch) {
+                "aarch64" -> "arm64"
+                "x86_64" -> "x86_64"
+                "armv7l", "armv8l" -> "armhf"
+                else -> null
+            }
+            setState(
+                UbuntuState.READY,
+                "Ubuntu imported",
+                100,
+            ) { current ->
+                current.copy(
+                    installed = true,
+                    version = "imported",
+                    arch = arch ?: current.arch,
+                    rootfsPath = rootfs.absolutePath,
+                    lastUpdated = System.currentTimeMillis(),
+                )
+            }
+            addLog("Import complete — Ubuntu userspace restored (${arch ?: "arch unknown"})")
+            return Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: SecurityException) {
+            return failStep("Malicious archive entry rejected", e)
+        } catch (e: Exception) {
+            return failStep("Import failed", e)
+        } finally {
+            try {
+                withContext(Dispatchers.IO) { staging.deleteRecursively() }
+            } catch (_: Exception) {
+                // Never mask the real outcome with a cleanup error.
+            }
+            pipelineRunning.set(false)
+        }
+    }
+
+    /**
      * Deletes the rootfs and the cached tarballs (proot is kept — it is
      * reusable). [onReset] runs first so AppGraph can close live sessions.
      */
@@ -490,6 +702,7 @@ class UbuntuRuntime(
         onLine: (String) -> Unit,
     ): Result<Int> = withContext(Dispatchers.IO) {
         val spec = sessionCommand(cwd, listOf("/bin/bash", "-lc", cmd), env)
+        val tail = ArrayDeque<String>()
         try {
             val proc = ProcessBuilder(spec.argv)
                 .apply {
@@ -503,6 +716,10 @@ class UbuntuRuntime(
                     proc.inputStream.bufferedReader().use { br ->
                         while (true) {
                             val line = br.readLine() ?: break
+                            synchronized(tail) {
+                                tail.addLast(line)
+                                while (tail.size > TAIL_LINES) tail.removeFirst()
+                            }
                             try {
                                 onLine(line)
                             } catch (_: Exception) {
@@ -525,7 +742,14 @@ class UbuntuRuntime(
                 )
             }
             reader.join(5000)
-            Result.success(proc.exitValue())
+            val code = proc.exitValue()
+            if (code == PROOT_FATAL_EXIT) {
+                // Exit 255 is proot's own fatal code (apt failures return 1/100).
+                // Map its log signatures to actionable errors, keep honest detail.
+                val lines = synchronized(tail) { tail.toList() }
+                mapProotFailure(lines)?.let { return@withContext Result.failure(it) }
+            }
+            Result.success(code)
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             Result.failure(
@@ -534,6 +758,104 @@ class UbuntuRuntime(
                 ),
             )
         }
+    }
+
+    /**
+     * Maps proot's own fatal output (exit 255) onto an actionable [ErrorInfo]
+     * instead of a bare "exited with code 255" — the difference between an apt
+     * failure and an environment problem lives in the log lines. Returns null
+     * when the output holds no known proot signature (caller keeps the code).
+     */
+    private fun mapProotFailure(lines: List<String>): ErrorInfoException? {
+        fun firstLine(vararg needles: String): String? =
+            lines.firstOrNull { line -> needles.any { line.contains(it, ignoreCase = true) } }
+
+        firstLine("can't create temporary", "can't create glue", "PROOT_TMP_DIR")?.let { hit ->
+            return ErrorInfoException(
+                ErrorInfo(
+                    title = "proot could not create its temporary files",
+                    detail = hit.trim(),
+                    causes = listOf(
+                        "proot writes glue/temp files to PROOT_TMP_DIR at startup",
+                        "that directory was missing, not writable, or wiped by the system",
+                    ),
+                    suggestions = listOf(
+                        "Run Repair — it recreates the app's writable directories",
+                        "If it persists, Reset and Install again",
+                        "Report this bug if it happens on every attempt",
+                    ),
+                    retryable = true,
+                ),
+            )
+        }
+        firstLine("No space left on device", "ENOSPC")?.let { hit ->
+            return ErrorInfoException(
+                ErrorInfo(
+                    title = "Storage is full",
+                    detail = hit.trim(),
+                    causes = listOf("The rootfs and its packages need more space than is available"),
+                    suggestions = listOf(
+                        "Free up storage (Settings → Storage shows usage)",
+                        "Remove large files from /root inside Ubuntu",
+                        "As last resort Reset, then Install again",
+                    ),
+                    retryable = true,
+                ),
+            )
+        }
+        firstLine("Exec format error")?.let { hit ->
+            return ErrorInfoException(
+                ErrorInfo(
+                    title = "Wrong architecture",
+                    detail = hit.trim(),
+                    causes = listOf(
+                        "The rootfs (or an imported archive) was built for a different CPU architecture",
+                        "for example an amd64/x86 image on an arm64 phone",
+                    ),
+                    suggestions = listOf(
+                        "Use Reset, then Install — the pinned catalog always matches this device",
+                        "For Import: pick an archive exported from the same architecture",
+                    ),
+                    retryable = false,
+                ),
+            )
+        }
+        firstLine("Permission denied")?.let { hit ->
+            if (hit.contains("rootfs") || hit.contains("proot") || lines.any { it.contains("proot", ignoreCase = true) }) {
+                return ErrorInfoException(
+                    ErrorInfo(
+                        title = "Permission denied on the Ubuntu files",
+                        detail = hit.trim(),
+                        causes = listOf(
+                            "The app's private directories became inaccessible",
+                            "A device cleaner/booster app or SELinux policy may have interfered",
+                        ),
+                        suggestions = listOf(
+                            "Run Repair to recreate the writable directories",
+                            "Close cleaner/booster apps that touch app data",
+                            "As last resort Reset, then Install again",
+                        ),
+                        retryable = true,
+                    ),
+                )
+            }
+        }
+        if (lines.any { it.contains("proot error", ignoreCase = true) }) {
+            val first = lines.firstOrNull { it.contains("proot error", ignoreCase = true) } ?: ""
+            return ErrorInfoException(
+                ErrorInfo(
+                    title = "proot failed to start the command",
+                    detail = first.trim(),
+                    causes = listOf("proot reported a fatal error before the command could run"),
+                    suggestions = listOf(
+                        "Check the Ubuntu log below for the full proot output",
+                        "Run Repair; if it persists, Reset and Install again",
+                    ),
+                    retryable = true,
+                ),
+            )
+        }
+        return null
     }
 
     /** Checked run used inside the install pipeline (bypasses the READY gate). */
@@ -602,5 +924,20 @@ class UbuntuRuntime(
         const val DEFAULT_TIMEOUT_MS = 180_000L
         const val STREAM_TIMEOUT_MS = 600_000L
         const val MAX_LOG_LINES = 300
+
+        /** Bytes per MiB (Long math — rootfs sizes exceed Int range). */
+        const val MB = 1024L * 1024L
+
+        /** Hard pre-flight gate: refuse Install below this much free space. */
+        const val MIN_FREE_BYTES = 1_000L * MB
+
+        /** Warn-only threshold for a comfortable install/update. */
+        const val WARN_FREE_BYTES = 2_000L * MB
+
+        /** proot's own fatal exit code (guest command failures use 1/100/…). */
+        const val PROOT_FATAL_EXIT = 255
+
+        /** Output lines kept for failure diagnosis in [mapProotFailure]. */
+        const val TAIL_LINES = 40
     }
 }

@@ -1,15 +1,11 @@
 package com.openchat.android.ubuntu
 
 import android.content.Context
-import android.system.Os
 import android.util.Log
 import com.openchat.android.core.net.Http
 import com.openchat.android.core.util.Errors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
-import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
-import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -108,63 +104,13 @@ class UbuntuInstaller(private val context: Context) {
     }
 
     /**
-     * Extracts a .tar.gz rootfs into [targetDir] using commons-compress.
-     *
-     * Security (spec §23): entries with absolute or ".." names throw
-     * SecurityException; symlink entries are restored with Os.symlink; regular
-     * files get their original permission bits via Os.chmod.
+     * Extracts a .tar.gz rootfs into [targetDir] — hardened streaming logic
+     * lives in [UbuntuArchive] (path-traversal rejection, symlink + permission
+     * restoration), shared with the userspace Import feature.
      */
     suspend fun extract(tarGz: File, targetDir: File): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            targetDir.mkdirs()
-            TarArchiveInputStream(
-                GzipCompressorInputStream(BufferedInputStream(FileInputStream(tarGz))),
-            ).use { tin ->
-                while (true) {
-                    val entry = tin.nextTarEntry ?: break
-                    val name = entry.name
-                    if (name.isEmpty()) continue
-                    if (name.startsWith("/")) {
-                        throw SecurityException("Absolute path entry in tarball: $name")
-                    }
-                    if (name.split('/').contains("..")) {
-                        throw SecurityException("Path traversal entry in tarball: $name")
-                    }
-                    val outFile = File(targetDir, name)
-                    when {
-                        entry.isDirectory -> outFile.mkdirs()
-                        entry.isSymbolicLink -> {
-                            outFile.parentFile?.mkdirs()
-                            outFile.delete()
-                            try {
-                                Os.symlink(entry.linkName, outFile.absolutePath)
-                            } catch (e: Exception) {
-                                throw IOException(
-                                    "symlink failed for ${entry.name} → ${entry.linkName}: ${e.message}",
-                                )
-                            }
-                        }
-                        entry.isLink -> { // hard link: copy the target's content
-                            outFile.parentFile?.mkdirs()
-                            val src = File(targetDir, entry.linkName.trimStart('/'))
-                            if (src.isFile) {
-                                FileInputStream(src).use { ins ->
-                                    FileOutputStream(outFile).use { fos -> ins.copyTo(fos) }
-                                }
-                                Os.chmod(outFile.absolutePath, (entry.mode.toLong() and 0b111111111L).toInt())
-                            } else {
-                                outFile.createNewFile()
-                            }
-                        }
-                        else -> { // regular file
-                            outFile.parentFile?.mkdirs()
-                            if (outFile.isDirectory) outFile.delete()
-                            FileOutputStream(outFile).use { fos -> tin.copyTo(fos) }
-                            Os.chmod(outFile.absolutePath, (entry.mode.toLong() and 0b111111111L).toInt())
-                        }
-                    }
-                }
-            }
+            FileInputStream(tarGz).use { ins -> UbuntuArchive.extract(ins, targetDir) }
             Result.success(Unit)
         } catch (e: SecurityException) {
             Result.failure(

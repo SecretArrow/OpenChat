@@ -120,8 +120,7 @@ class ProotRunner(
     /**
      * Builds the real proot session/exec spec:
      * argv = [proot, --kill-on-exit, -0, -w, cwd, -R, rootfs] + cmd,
-     * env  = base env (HOME/PATH/TERM/LANG/DEBIAN_FRONTEND/TMPDIR) + caller extras
-     * (caller overrides win).
+     * env  = [baseEnv] + caller extras (caller overrides win).
      */
     fun buildSessionSpec(
         cwd: String,
@@ -139,21 +138,11 @@ class ProotRunner(
             rootfs.absolutePath,
         )
         argv.addAll(cmd)
-        val merged = LinkedHashMap<String, String>()
-        merged["HOME"] = "/root"
-        merged["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/node/bin"
-        merged["TERM"] = "xterm-256color"
-        merged["LANG"] = "C.UTF-8"
-        merged["DEBIAN_FRONTEND"] = "noninteractive"
-        merged["TMPDIR"] = "/tmp"
-        // proot's seccomp filter is unreliable under Android kernels — the official
-        // Termux builds disable it the same way.
-        merged["PROOT_NO_SECCOMP"] = "1"
-        merged.putAll(env)
+        val merged = mergeEnv(baseEnv(UbuntuFileSystem.prootTmpDir(context).absolutePath), env)
         return SessionSpec(argv = argv, cwd = cwd, env = merged)
     }
 
-    private companion object {
+    companion object {
         const val TAG = "OpenChat/Proot"
 
         const val PROOT_AARCH64_URL: String =
@@ -168,5 +157,36 @@ class ProotRunner(
             "https://github.com/proot-me/proot/releases/download/v5.3.0/proot-v5.3.0-x86_64-static"
         const val PROOT_X86_64_SHA256: String =
             "d1eb20cb201e6df08d707023efb000623ff7c10d6574839d7bb42d0adba6b4da"
+
+        /**
+         * Base environment for every proot process (pure function — JVM-tested).
+         *
+         * [prootTmpDir] MUST be a writable host directory: proot creates its
+         * temporary files and the glue rootfs there. The default `/tmp` is not
+         * writable for Android app processes, which failed every exec with
+         * `can't create temporary directory: Permission denied` (exit 255).
+         */
+        fun baseEnv(prootTmpDir: String): LinkedHashMap<String, String> {
+            val env = LinkedHashMap<String, String>()
+            env["HOME"] = "/root"
+            env["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/node/bin"
+            env["TERM"] = "xterm-256color"
+            env["LANG"] = "C.UTF-8"
+            env["DEBIAN_FRONTEND"] = "noninteractive"
+            env["TMPDIR"] = "/tmp"
+            // proot's seccomp filter is unreliable under Android kernels — the official
+            // Termux builds disable it the same way.
+            env["PROOT_NO_SECCOMP"] = "1"
+            // proot's own scratch space on the HOST side (guest /tmp is separate).
+            env["PROOT_TMP_DIR"] = prootTmpDir
+            return env
+        }
+
+        /** Merges caller extras over the base env (caller wins) — pure, JVM-tested. */
+        fun mergeEnv(base: Map<String, String>, extras: Map<String, String>): LinkedHashMap<String, String> {
+            val merged = LinkedHashMap<String, String>(base)
+            merged.putAll(extras)
+            return merged
+        }
     }
 }

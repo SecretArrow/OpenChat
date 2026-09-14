@@ -1,5 +1,7 @@
 package com.openchat.android.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import android.net.Uri
 import com.openchat.android.AppGraph
 import com.openchat.android.core.model.ErrorInfo
 import com.openchat.android.core.model.RepairAction
@@ -46,8 +49,9 @@ import kotlinx.coroutines.launch
 
 /**
  * Ubuntu userspace management (spec §3–4): full install chain with progress,
- * repair, update, destructive reset (with confirm), open terminal shortcut
- * and the installer/runtime log tail (spec §26 honesty).
+ * repair, update, destructive reset (with confirm), userspace export/import
+ * (backup/restore via SAF), open terminal shortcut and the installer/runtime
+ * log tail (spec §26 honesty).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,6 +60,8 @@ fun UbuntuScreen(nav: NavHostController) {
     val log by AppGraph.ubuntu.log.collectAsState()
     val scope = rememberCoroutineScope()
     var confirmReset by remember { mutableStateOf(false) }
+    var confirmImport by remember { mutableStateOf(false) }
+    var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
     var working by remember { mutableStateOf(false) }
 
     val blocked = status.state.busy || working
@@ -76,6 +82,32 @@ fun UbuntuScreen(nav: NavHostController) {
         }
     }
 
+    // Export: user picks the destination (Downloads etc.) — no storage
+    // permission needed. Suggested name carries the date for orderly backups.
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/gzip"),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            op("Export") { AppGraph.ubuntu.export(uri) }
+        }
+    }
+
+    // Import: user picks an exported .tar.gz (or a full rootfs tarball).
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            pendingImportUri = uri
+            confirmImport = true
+        }
+    }
+
+    fun suggestedExportName(): String {
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US)
+            .format(java.util.Date())
+        return "openchat-ubuntu-$stamp.tar.gz"
+    }
+
     val errorInfo: ErrorInfo? = if (status.state == UbuntuState.ERROR) {
         ErrorInfo(
             title = "Ubuntu installation error",
@@ -83,11 +115,13 @@ fun UbuntuScreen(nav: NavHostController) {
             causes = listOf(
                 "Download interrupted or checksum mismatch",
                 "Storage full — the rootfs needs several hundred MB",
+                "proot could not create its temporary files (PROOT_TMP_DIR)",
                 "Extraction failed (corrupt tarball or SELinux restriction)"
             ),
             suggestions = listOf(
                 "Use Repair to re-verify and re-extract the rootfs",
                 "Use Reset for a clean re-install",
+                "Export first if you need a backup of the current userspace",
                 "Check free space in Settings → Storage"
             ),
             retryable = true,
@@ -182,6 +216,44 @@ fun UbuntuScreen(nav: NavHostController) {
                 ) { Text("Reset", color = MaterialTheme.colorScheme.error) }
             }
 
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "Backup & restore",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        "Export packs the whole userspace (installed packages, workspaces, " +
+                            "configuration) into one .tar.gz. Import restores it on this device " +
+                            "— or on a new device with the same architecture — replacing whatever " +
+                            "is currently installed. Export also works when Ubuntu is broken, " +
+                            "so you can back up before a Reset.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { exportLauncher.launch(suggestedExportName()) },
+                            enabled = !blocked && AppGraph.ubuntu.hasRootfs(),
+                        ) { Text("Export") }
+                        OutlinedButton(
+                            onClick = {
+                                importLauncher.launch(
+                                    arrayOf(
+                                        "application/gzip",
+                                        "application/x-gzip",
+                                        "application/x-tgz",
+                                        "application/x-compressed-tar",
+                                        "application/octet-stream",
+                                    ),
+                                )
+                            },
+                            enabled = !blocked,
+                        ) { Text("Import") }
+                    }
+                }
+            }
+
             ErrorCard(
                 info = errorInfo,
                 onRetry = { op("Repair") { AppGraph.ubuntu.repair() } },
@@ -225,6 +297,26 @@ fun UbuntuScreen(nav: NavHostController) {
                 op("Reset") { AppGraph.ubuntu.reset() }
             },
             onDismiss = { confirmReset = false },
+        )
+    }
+
+    if (confirmImport) {
+        ConfirmDialog(
+            title = "Import this userspace?",
+            text = "The archive replaces the currently installed Ubuntu userspace — packages, " +
+                "workspaces and configuration are restored exactly as they were exported. " +
+                "Open terminal sessions will be closed. Make sure the archive was exported " +
+                "from a device with the same architecture (arm64/armhf/x86_64).",
+            onConfirm = {
+                confirmImport = false
+                val uri = pendingImportUri
+                pendingImportUri = null
+                if (uri != null) op("Import") { AppGraph.ubuntu.import(uri) }
+            },
+            onDismiss = {
+                confirmImport = false
+                pendingImportUri = null
+            },
         )
     }
 }

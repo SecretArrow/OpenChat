@@ -11,6 +11,10 @@ import java.io.File
  *  - `ubuntu/rootfs`  — extracted Ubuntu base rootfs (bash, apt, /root/workspaces…)
  *  - `ubuntu/bin/proot` — static proot binary downloaded per ABI
  *  - `ubuntu/cache`   — downloaded tarballs (reused by Repair)
+ *  - `ubuntu/tmp`     — PROOT_TMP_DIR: proot's own scratch space (glue rootfs,
+ *                       temporary files). /tmp is not writable for apps on
+ *                       Android, so proot MUST be pointed here explicitly.
+ *  - `ubuntu/staging` — extraction target while importing a userspace backup
  */
 object UbuntuFileSystem {
 
@@ -20,8 +24,27 @@ object UbuntuFileSystem {
 
     fun cacheDir(context: Context): File = File(context.filesDir, "ubuntu/cache")
 
+    /**
+     * proot's host-side scratch directory (`PROOT_TMP_DIR`). proot creates its
+     * temporary files and the glue rootfs here at startup — the default `/tmp`
+     * is not writable for app processes on Android, which used to fail every
+     * exec with `can't create temporary directory: Permission denied`.
+     * Created on demand; idempotent.
+     */
+    fun prootTmpDir(context: Context): File = File(context.filesDir, "ubuntu/tmp").apply { mkdirs() }
+
+    /** Staging directory an imported rootfs is extracted into before validation. */
+    fun importStagingDir(context: Context): File = File(context.filesDir, "ubuntu/staging")
+
     /** Where all workspace directories live inside the rootfs. */
     fun workspaceRoot(rootfs: File): File = File(rootfs, "root/workspaces")
+
+    /**
+     * True when a usable rootfs exists on disk (bash is present) — the gate
+     * for Export. Deliberately independent of the persisted state so a broken
+     * installation can still be backed up before a Reset.
+     */
+    fun hasRootfs(context: Context): Boolean = File(rootfsDir(context), "bin/bash").isFile
 
     /**
      * Resolves [rel] below [root] (anti path-traversal, §23).

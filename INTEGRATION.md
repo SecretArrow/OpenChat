@@ -152,9 +152,12 @@ class UbuntuRuntime(context, json, settings, proot: ProotRunner, installer: Ubun
     suspend fun install(): Result<Unit>               // §3–4 full chain, progress via status/log
     suspend fun repair(): Result<Unit>                // re-verify/re-extract, keep /root home data
     suspend fun update(): Result<Unit>                // apt update+upgrade + tools re-check
+    suspend fun export(uri: Uri): Result<Unit>        // pack rootfs → .tar.gz backup (works from ERROR too)
+    suspend fun import(uri: Uri): Result<Unit>        // restore .tar.gz: stage → validate bin/bash → swap → smoke
     suspend fun reset(): Result<Unit>                 // delete rootfs (confirm in UI)
     suspend fun ensureReady(): Result<Unit>           // fast check; error = Errors.ubuntuNotReady()
     fun isReady(): Boolean
+    fun hasRootfs(): Boolean                          // bin/bash on disk — Export gate, state-independent
     suspend fun exec(cmd: String, cwd: String = "/root", env: Map<String,String> = emptyMap(), timeoutMs: Long = 180_000): Result<String>
     suspend fun execStream(cmd: String, cwd: String = "/root", env: Map<String,String> = emptyMap(), onLine: (String) -> Unit): Result<Int>
     fun sessionCommand(cwd: String, cmd: List<String>, env: Map<String,String>): SessionSpec
@@ -164,7 +167,14 @@ data class SessionSpec(val argv: List<String>, val cwd: String, val env: Map<Str
 // proot argv (real): [prootPath, "--kill-on-exit", "-0", "-R", rootfsDir, "-w", cwd,
 //   "-b","/dev","-b","/proc","-b","/sys", "-b", appFilesBind? (no), then cmd...]
 // Env for sessions/exec: HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/node/bin
-//   TERM=xterm-256color LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive + caller extras.
+//   TERM=xterm-256color LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive TMPDIR=/tmp
+//   PROOT_NO_SECCOMP=1 PROOT_TMP_DIR=<filesDir>/ubuntu/tmp  ← REQUIRED: /tmp is not
+//   writable for app processes; without it proot dies with exit 255
+//   ("can't create temporary directory / can't create glue rootfs: Permission denied")
+//   + caller extras (caller wins).
+// proot exit-255 failure mapping (mapProotFailure): temp-dir errors → repair hint,
+//   ENOSPC → storage guidance, "Exec format error" → wrong-arch archive, generic
+//   "proot error" → honest detail + repair suggestions. Guest command failures keep their code.
 // proot binary: <filesDir>/ubuntu/bin/proot downloaded per-ABI from (REAL hashes):
 //   aarch64: https://github.com/proot-me/proot/releases/download/v5.3.0/proot-v5.3.0-aarch64-static  sha256 fa10b1a7818c2f5b1dcb5834450570c368c9ecf66d31521509621b95c4538a45
 //   arm:     https://github.com/proot-me/proot/releases/download/v5.3.0/proot-v5.3.0-arm-static      sha256 bf186a37c7a19621e5bf3cfdf6bce54bfa2e220f91eb7196318e699ac174cc69
