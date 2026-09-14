@@ -1,0 +1,148 @@
+{
+  "version": 2,
+  "providers": [
+    {
+      "id": "agentrouter",
+      "name": "AgentRouter",
+      "protocols": ["anthropic", "openai"],
+      "defaultProtocol": "auto",
+      "connections": {
+        "anthropic": {
+          "baseUrl": "https://agentrouter.org/v1",
+          "auth": { "type": "api_key", "header": "x-api-key" },
+          "endpoints": { "chat": "/messages", "models": "/models" }
+        },
+        "openai": {
+          "baseUrl": "https://agentrouter.org/v1",
+          "auth": { "type": "bearer", "header": "Authorization" },
+          "endpoints": { "chat": "/chat/completions", "responses": "/responses", "models": "/models" }
+        }
+      },
+      "discovery": { "enabled": true, "protocol": "auto" }
+    },
+    {
+      "id": "nvidia-nim",
+      "name": "NVIDIA NIM",
+      "protocols": ["openai"],
+      "defaultProtocol": "openai",
+      "connections": {
+        "openai": {
+          "baseUrl": "https://integrate.api.nvidia.com/v1",
+          "auth": { "type": "bearer", "header": "Authorization" },
+          "endpoints": { "chat": "/chat/completions", "models": "/models" }
+        }
+      },
+      "discovery": { "enabled": true, "protocol": "openai" }
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "protocols": ["openai", "anthropic"],
+      "defaultProtocol": "openai",
+      "connections": {
+        "openai": {
+          "baseUrl": "https://openrouter.ai/api/v1",
+          "auth": { "type": "bearer", "header": "Authorization" },
+          "endpoints": { "chat": "/chat/completions", "responses": "/responses", "models": "/models" }
+        },
+        "anthropic": {
+          "baseUrl": "https://openrouter.ai",
+          "auth": { "type": "api_key", "header": "x-api-key" },
+          "endpoints": { "chat": "/api/v1/messages", "models": "/api/v1/models" }
+        }
+      },
+      "discovery": { "enabled": true, "protocol": "openai" }
+    },
+    {
+      "id": "poolside",
+      "name": "Poolside",
+      "protocols": ["auto"],
+      "defaultProtocol": "auto",
+      "connections": {
+        "auto": {
+          "baseUrl": "",
+          "auth": { "type": "bearer", "header": "Authorization" },
+          "endpoints": { "models": "/models" },
+          "customBaseUrl": true
+        }
+      },
+      "discovery": { "enabled": true, "protocol": "auto" }
+    },
+    {
+      "id": "commandcode",
+      "name": "CommandCode",
+      "protocols": ["auto"],
+      "defaultProtocol": "auto",
+      "connections": {
+        "auto": {
+          "baseUrl": "",
+          "auth": { "type": "bearer", "header": "Authorization" },
+          "endpoints": { "models": "/models" },
+          "customBaseUrl": true
+        }
+      },
+      "discovery": { "enabled": true, "protocol": "auto" }
+    },
+    {
+      "id": "nararouter",
+      "name": "NaraRouter",
+      "protocols": ["openai", "anthropic"],
+      "defaultProtocol": "auto",
+      "connections": {
+        "openai": {
+          "baseUrl": "https://router.bynara.id/v1",
+          "auth": { "type": "bearer", "header": "Authorization" },
+          "endpoints": { "chat": "/chat/completions", "responses": "/responses", "models": "/models" }
+        },
+        "anthropic": {
+          "baseUrl": "https://router.bynara.id",
+          "auth": { "type": "api_key", "header": "x-api-key" },
+          "endpoints": { "chat": "/v1/messages", "models": "/v1/models" }
+        }
+      },
+      "discovery": { "enabled": true, "protocol": "auto" }
+    },
+    {
+      "id": "zyloo",
+      "name": "Zyloo",
+      "protocols": ["openai"],
+      "defaultProtocol": "openai",
+      "connections": {
+        "openai": {
+          "baseUrl": "https://api.zyloo.io/v1",
+          "auth": { "type": "bearer", "header": "Authorization" },
+          "endpoints": { "chat": "/chat/completions", "responses": "/responses", "models": "/models" }
+        }
+      },
+      "discovery": { "enabled": true, "protocol": "openai" }
+    },
+    {
+      "id": "bigmodel",
+      "name": "BigModel / Zhipu",
+      "protocols": ["openai"],
+      "defaultProtocol": "openai",
+      "connections": {
+        "openai": {
+          "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
+          "auth": { "type": "bearer", "header": "Authorization" },
+          "endpoints": { "chat": "/chat/completions", "models": "/models" }
+        }
+      },
+      "discovery": { "enabled": true, "protocol": "openai" }
+    },
+    {
+      "id": "tokenrouter",
+      "name": "TokenRouter",
+      "protocols": ["auto"],
+      "defaultProtocol": "auto",
+      "connections": {
+        "auto": {
+          "baseUrl": "https://api.tokenrouter.com/v1",
+          "auth": { "type": "bearer", "header": "Authorization" },
+          "endpoints": { "models": "/models" }
+        }
+      },
+      "discovery": { "enabled": true, "protocol": "auto" }
+    }
+  ]
+}

@@ -1,0 +1,157 @@
+name: Universal APK Test
+
+# App-agnostic autonomous pipeline (see scripts/autotest/):
+#   BUILD RELEASE → VERIFY APK → INSTALL → LAUNCH → DISCOVER APPLICATION →
+#   DISCOVER UI/FEATURES → GENERATE TEST FLOWS → EXECUTE → DETECT ERRORS →
+#   COLLECT DIAGNOSTICS → ANALYZE ROOT CAUSE → AUTO-FIX (bounded) →
+#   REBUILD → RE-RUN FAILED TEST → REGRESSION → RELEASE GATE
+#
+# Dispatch-only because a full round is expensive (release build + emulator).
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Test mode (SMOKE | STANDARD | DEEP | RELEASE)'
+        type: choice
+        default: 'STANDARD'
+        options: [SMOKE, STANDARD, DEEP, RELEASE]
+      api-level:
+        description: 'Emulator API level'
+        type: choice
+        default: '30'
+        options: ['29', '30', '31', '32', '33', '34']
+      max_actions:
+        description: 'Exploration action budget per attempt'
+        required: false
+        default: '120'
+      max_seconds:
+        description: 'Exploration time budget per attempt (seconds)'
+        required: false
+        default: '900'
+      seed:
+        description: 'Randomized-exploration seed (reproducible)'
+        required: false
+        default: '1337'
+      max_repair_attempts:
+        description: 'Auto-fix + rebuild + retest cycles (0 = test only)'
+        required: false
+        default: '2'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: universal-apk-test-${{ github.event.inputs.api-level || '30' }}
+  cancel-in-progress: true
+
+jobs:
+  autonomous:
+    name: Discover → Test → Auto-Fix → Regression (API ${{ github.event.inputs.api-level || '30' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      MODE: ${{ github.event.inputs.mode || 'STANDARD' }}
+      API_LEVEL: ${{ github.event.inputs.api-level || '30' }}
+      MAX_ACTIONS: ${{ github.event.inputs.max_actions || '120' }}
+      MAX_SECONDS: ${{ github.event.inputs.max_seconds || '900' }}
+      SEED: ${{ github.event.inputs.seed || '1337' }}
+      MAX_REPAIR: ${{ github.event.inputs.max_repair_attempts || '2' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch llama.cpp (pinned b10941) for on-device GGUF engine
+        uses: actions/checkout@v4
+        with:
+          repository: ggml-org/llama.cpp
+          ref: b10941
+          path: app/src/main/cpp/llama.cpp
+          fetch-depth: 1
+
+      - name: Install CMake 3.31 + Vulkan SDK (glslc) for the GGUF Vulkan backend
+        run: |
+          set -e
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "cmake;3.31.1" >/dev/null 2>&1 || true
+          wget -qO /tmp/lunarg-key.asc "https://packages.lunarg.com/lunarg-signing-key-pub.asc"
+          test -s /tmp/lunarg-key.asc
+          sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/lunarg-vulkan.gpg /tmp/lunarg-key.asc
+          echo "deb [signed-by=/usr/share/keyrings/lunarg-vulkan.gpg] https://packages.lunarg.com/vulkan noble main" | sudo tee /etc/apt/sources.list.d/lunarg-vulkan.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq vulkan-sdk
+          glslc --version | head -1
+          VKHPP="$(find /usr -name vulkan.hpp -path '*vulkan*' 2>/dev/null | head -1)"
+          test -n "$VKHPP"
+          mkdir -p /tmp/vk-include
+          cp -r "$(dirname "$VKHPP")" /tmp/vk-include/vulkan
+          test -f /tmp/vk-include/vulkan/vulkan.hpp
+          VKVID="$(find /usr -type d -name vk_video 2>/dev/null | head -1)"
+          if [ -n "$VKVID" ]; then cp -r "$VKVID" /tmp/vk-include/vk_video; fi
+          echo "OPENCHAT_VK_INCLUDE=/tmp/vk-include" >> "$GITHUB_ENV"
+          git clone --depth 1 --branch vulkan-sdk-1.4.309.0 https://github.com/KhronosGroup/SPIRV-Headers /tmp/spirv-headers-src
+          cmake -S /tmp/spirv-headers-src -B /tmp/spirv-headers-build -DCMAKE_INSTALL_PREFIX=/tmp/spirv-headers-install >/dev/null
+          cmake --install /tmp/spirv-headers-build >/dev/null
+          mkdir -p /tmp/vk-include
+          cp -r /tmp/spirv-headers-install/include/spirv /tmp/vk-include/spirv
+          test -f /tmp/vk-include/spirv/unified1/spirv.hpp
+          SP_DIR="$(dirname "$(find /tmp/spirv-headers-install -name SPIRV-HeadersConfig.cmake | head -1)")"
+          test -n "$SP_DIR" && test -f "$SP_DIR/SPIRV-HeadersConfig.cmake"
+          echo "SPIRV_HEADERS_DIR=$SP_DIR" >> "$GITHUB_ENV"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle (cache)
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Prepare release signing (secrets or explicit ephemeral fallback)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: bash scripts/prepare_signing.sh
+
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls /dev/kvm
+
+      - name: Autonomous loop on emulator (build → test → fix → retest)
+        env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_BASE_URL: ${{ secrets.AI_BASE_URL }}
+          AI_MODEL: ${{ secrets.AI_MODEL }}
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          script: bash scripts/autotest/loop.sh "$MODE" "$MAX_ACTIONS" "$MAX_SECONDS" "$SEED" "$MAX_REPAIR" x86_64
+
+      - name: Upload universal-test artifacts (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: universal-apk-test-api${{ env.API_LEVEL }}
+          path: |
+            artifacts/
+          if-no-files-found: ignore
+
+      - name: Release gate
+        if: always()
+        run: |
+          GATE="$(cat artifacts/reports/gate.txt 2>/dev/null || echo FAIL)"
+          echo "release gate: $GATE"
+          if [ "$GATE" != "PASS" ]; then
+            echo "::error::Release gate FAILED — see universal-apk-test artifacts (report: artifacts/reports/release-test-report.md)"
+            exit 1
+          fi
+          echo "Release gate PASSED — APK is safe to publish."

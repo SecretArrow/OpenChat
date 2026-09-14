@@ -44,7 +44,7 @@ object Routes {
     const val FILES = "files"
     const val SETTINGS = "settings"
     const val PROVIDERS = "settings/providers"
-    const val PROVIDER_EDIT = "settings/provider/{providerId}"
+    const val PROVIDER_EDIT = "settings/provider/{providerId}?preset={preset}"
     const val MODELS = "settings/models"
     const val MODEL_EDIT = "settings/model/{modelId}"
     const val OLLAMA = "settings/ollama"
@@ -127,9 +127,16 @@ fun AppNav(openUpdatesTick: Int = 0) {
             composable(Routes.PROVIDERS) { ProvidersScreen(nav) }
             composable(
                 Routes.PROVIDER_EDIT,
-                arguments = listOf(navArgument("providerId") { type = NavType.StringType }),
+                arguments = listOf(
+                    navArgument("providerId") { type = NavType.StringType },
+                    navArgument("preset") { type = NavType.StringType; nullable = true; defaultValue = null },
+                ),
             ) { entry ->
-                ProviderEditScreen(nav, entry.arguments?.getString("providerId") ?: "new")
+                ProviderEditScreen(
+                    nav,
+                    entry.arguments?.getString("providerId") ?: "new",
+                    entry.arguments?.getString("preset"),
+                )
             }
             composable(Routes.MODELS) { ModelsScreen(nav) }
             composable(
