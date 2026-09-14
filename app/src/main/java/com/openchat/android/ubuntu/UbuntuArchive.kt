@@ -16,6 +16,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.io.SequenceInputStream
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardCopyOption
@@ -219,14 +220,21 @@ object UbuntuArchive {
                         }
                         files++
                     }
-                    entry.isFIFO || entry.isCharacterBlock || entry.isBlockDev -> skipped++
-                    else -> { // regular file
-                        if (outFile.isDirectory) outFile.deleteRecursively()
-                        outFile.parentFile?.mkdirs()
-                        FileOutputStream(outFile).use { o -> tin.copyTo(o) }
-                        applyMode(outFile.toPath(), entry.mode.toLong())
-                        files++
-                        contentBytes += entry.size.coerceAtLeast(0)
+                    else -> {
+                        // Regular file = linkFlag '0' or NUL (both occur in real
+                        // tarballs). Everything else — fifos, char/block devices,
+                        // sparse entries — is skipped and counted honestly.
+                        val flag = entry.linkFlag
+                        if (flag == TarArchiveEntry.LF_NORMAL || flag == 0.toByte()) {
+                            if (outFile.isDirectory) outFile.deleteRecursively()
+                            outFile.parentFile?.mkdirs()
+                            FileOutputStream(outFile).use { o -> tin.copyTo(o) }
+                            applyMode(outFile.toPath(), entry.mode.toLong())
+                            files++
+                            contentBytes += entry.size.coerceAtLeast(0)
+                        } else {
+                            skipped++
+                        }
                     }
                 }
             }
