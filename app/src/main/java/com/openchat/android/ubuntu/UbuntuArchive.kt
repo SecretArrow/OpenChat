@@ -64,7 +64,10 @@ object UbuntuArchive {
         onProgress: (Long, Long) -> Unit = { _, _ -> },
     ): Stats {
         val rootPath = rootfs.toPath()
-        val total = rootfs.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        // Pre-walk must mirror visit() exactly — in particular it must NOT
+        // follow symlinks (File.walkTopDown().isFile does), or the reported
+        // total would double-count link targets and never match `done`.
+        val total = contentBytes(rootfs)
         var done = 0L
         var files = 0
         var dirs = 0
@@ -283,6 +286,28 @@ object UbuntuArchive {
     }
 
     // ------------------------------------------------------------------ internals
+
+    /** Sum of regular-file sizes (NOFOLLOW) — mirrors the export walk. */
+    private fun contentBytes(dir: File): Long {
+        var sum = 0L
+        val children = dir.listFiles() ?: return 0L
+        for (child in children) {
+            val attrs = try {
+                Files.readAttributes(
+                    child.toPath(),
+                    PosixFileAttributes::class.java,
+                    LinkOption.NOFOLLOW_LINKS,
+                )
+            } catch (_: Exception) {
+                continue
+            }
+            when {
+                attrs.isDirectory -> sum += contentBytes(child)
+                attrs.isRegularFile -> sum += child.length()
+            }
+        }
+        return sum
+    }
 
     /** Permission bits of [path] (defaults to 0644 when POSIX attrs fail). */
     private fun permBits(path: Path): Int {

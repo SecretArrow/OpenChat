@@ -160,7 +160,10 @@ class UbuntuArchiveTest {
     }
 
     @Test
-    fun `extraction rejects absolute path entries`() {
+    fun `absolute path entries are contained inside the target dir`() {
+        // commons-compress normalizes entry names at construction — a leading
+        // "/" is stripped, so "/etc/passwd" becomes "etc/passwd" and must land
+        // INSIDE the target directory (safe containment), never outside it.
         val out = ByteArrayOutputStream()
         org.apache.commons.compress.archivers.tar.TarArchiveOutputStream(out).use { tar ->
             val e = org.apache.commons.compress.archivers.tar.TarArchiveEntry("/etc/passwd")
@@ -169,13 +172,14 @@ class UbuntuArchiveTest {
             tar.write("root:x\n".toByteArray())
             tar.closeArchiveEntry()
         }
-        val dst = tempDir("absolute-dst")
-        try {
-            UbuntuArchive.extract(ByteArrayInputStream(out.toByteArray()), dst)
-            fail("expected SecurityException for absolute entry")
-        } catch (expected: SecurityException) {
-            assertTrue(expected.message!!.contains("/etc/passwd"))
-        }
+        val scope = tempDir("absolute-scope") // dedicated parent so escape checks are meaningful
+        val dst = File(scope, "dst")
+        UbuntuArchive.extract(ByteArrayInputStream(out.toByteArray()), dst)
+        assertTrue(File(dst, "etc/passwd").isFile)
+        assertEquals("root:x\n", File(dst, "etc/passwd").readText())
+        // Nothing escaped the destination.
+        val siblings = scope.listFiles().orEmpty().filter { it != dst }
+        assertTrue("no files may be written outside the target dir", siblings.isEmpty())
     }
 
     @Test
