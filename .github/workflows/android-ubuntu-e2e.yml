@@ -91,47 +91,18 @@ jobs:
 
       - name: Real Ubuntu E2E on emulator (install → verify → interfere → persist)
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          MAX_REPAIR: ${{ github.event.inputs.max-repair-attempts || '2' }}
+          E2E_TIMEOUT: ${{ github.event.inputs.e2e-timeout || '2700' }}
+          E2E_CLEAN: ${{ github.event.inputs.clean || 'true' }}
+          E2E_APK: app/build/outputs/apk/debug/OpenChat-x86_64-debug.apk
         with:
           api-level: ${{ github.event.inputs.api-level || '30' }}
           target: google_apis
           arch: x86_64
           disk-size: 8G
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: |
-            set -u
-            MAX=${{ github.event.inputs.max-repair-attempts || '2' }}
-            CLEAN=""
-            if [ "${{ github.event.inputs.clean || 'true' }}" = "true" ]; then CLEAN="--clean"; fi
-            attempt=0
-            ok=0
-            while [ "$attempt" -le "$MAX" ]; do
-              echo "== E2E attempt $attempt of $MAX =="
-              if bash scripts/e2e-ubuntu.sh --ci $CLEAN \
-                   --apk 'app/build/outputs/apk/debug/OpenChat-x86_64-debug.apk' \
-                   --timeout '${{ github.event.inputs.e2e-timeout || '2700' }}' \
-                   --collect-diagnostics; then
-                ok=1
-                echo "== E2E PASSED on attempt $attempt =="
-                break
-              fi
-              attempt=$((attempt + 1))
-              if [ "$attempt" -gt "$MAX" ]; then
-                echo "== E2E still failing after $MAX repair cycles — honest stop =="
-                break
-              fi
-              echo "== E2E attempt $((attempt-1)) failed — bounded auto-fix =="
-              # Deterministic repair first (root-cause patterns from the run log),
-              # then an AI-assisted patch pass for the remaining classes of bug.
-              python3 scripts/autofix.py e2e-artifacts/logs/e2e-run.log || true
-              python3 scripts/autofix_ai.py e2e-artifacts/logs/e2e-run.log || true
-              # Rebuild after any repair; a repair that did not change the tree
-              # still gets a genuine retest (flaky-device isolation).
-              ./gradlew assembleDebug --no-daemon --stacktrace
-            done
-            if [ "$ok" != "1" ]; then
-              echo "FINAL RESULT: FAIL — see e2e-artifacts/summary.txt and failure-report.md"
-              exit 1
-            fi
+          script: bash scripts/e2e/e2e_ci_loop.sh
 
       - name: Upload E2E artifacts (always)
         if: always()
