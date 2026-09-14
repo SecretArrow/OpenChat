@@ -1,0 +1,33 @@
+{
+  "package": "com.openchat.android",
+  "versionName": "0.1.9",
+  "versionCode": "101",
+  "launchable_activity": "com.openchat.android.MainActivity",
+  "minSdk": "29",
+  "targetSdk": "28",
+  "permissions": [
+    "android.permission.INTERNET",
+    "android.permission.ACCESS_NETWORK_STATE",
+    "android.permission.FOREGROUND_SERVICE",
+    "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
+    "android.permission.WAKE_LOCK",
+    "android.permission.POST_NOTIFICATIONS",
+    "android.permission.REQUEST_INSTALL_PACKAGES",
+    "com.openchat.android.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+  ],
+  "apk": "/home/runner/work/OpenChat/OpenChat/release/OpenChat-x86_64.apk",
+  "discovered_at": "2026-09-14T09:15:02.560134+00:00",
+  "component": "com.openchat.android/com.openchat.android.MainActivity",
+  "activities": [
+    "com.openchat.android.MainActivity"
+  ],
+  "services": [
+    "com.openchat.android.bg.RuntimeForegroundService"
+  ],
+  "receivers": [
+    "androidx.profileinstaller.ProfileInstallReceiver"
+  ],
+  "providers": [
+    "androidx.startup.InitializationProvider"
+  ]
+}

@@ -1,0 +1,620 @@
+[
+ {
+  "t": "2026-09-14T09:15:02.562537+00:00",
+  "action": "install",
+  "apk": "OpenChat-x86_64.apk"
+ },
+ {
+  "t": "2026-09-14T09:15:05.358392+00:00",
+  "action": "launch",
+  "component": "com.openchat.android/com.openchat.android.MainActivity",
+  "ok": true,
+  "raw": "Starting: Intent { cmp=com.openchat.android/.MainActivity }\nStatus: ok\nLaunchState: COLD\nActivity: com.openchat.android/.MainActivity\nTotalTime: 672\nWaitTime: 678\nComplete\n"
+ },
+ {
+  "t": "2026-09-14T09:15:12.348723+00:00",
+  "action": "tap",
+  "target": "android.widget.EditText",
+  "bounds": [
+   122,
+   498,
+   250,
+   554
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:15:20.513698+00:00",
+  "action": "tap",
+  "target": "I",
+  "bounds": [
+   122,
+   498,
+   250,
+   554
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:15:24.699970+00:00",
+  "action": "tap",
+  "target": "I h",
+  "bounds": [
+   122,
+   498,
+   250,
+   554
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:15:28.818818+00:00",
+  "action": "tap",
+  "target": "I hh",
+  "bounds": [
+   122,
+   498,
+   250,
+   554
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:15:33.005010+00:00",
+  "action": "tap",
+  "target": "I hhh",
+  "bounds": [
+   122,
+   498,
+   250,
+   554
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:15:38.796164+00:00",
+  "action": "tap",
+  "target": "I hhhh",
+  "bounds": [
+   122,
+   498,
+   250,
+   554
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:15:46.445179+00:00",
+  "action": "tap",
+  "target": "I hhhh to",
+  "bounds": [
+   122,
+   498,
+   250,
+   554
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:15:50.548118+00:00",
+  "action": "tap",
+  "target": "I hhhh to h",
+  "bounds": [
+   122,
+   498,
+   250,
+   554
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:15:54.654965+00:00",
+  "action": "tap",
+  "target": "I hhhh to hh",
+  "bounds": [
+   122,
+   498,
+   250,
+   554
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:15:58.798364+00:00",
+  "action": "tap",
+  "target": "I hhhh to hhh",
+  "bounds": [
+   122,
+   474,
+   250,
+   554
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:16:04.530890+00:00",
+  "action": "tap",
+  "target": "I hhhh to hhhh",
+  "bounds": [
+   122,
+   474,
+   250,
+   554
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:16:18.909500+00:00",
+  "action": "tap",
+  "target": "Apps list",
+  "bounds": [
+   151,
+   493,
+   169,
+   499
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:16:23.007419+00:00",
+  "action": "tap",
+  "target": "com.google.android.apps.nexuslauncher:id/universal_smartspac",
+  "bounds": [
+   15,
+   32,
+   305,
+   123
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:16:28.710979+00:00",
+  "action": "tap",
+  "target": "Monday, Sep 14",
+  "bounds": [
+   63,
+   32,
+   256,
+   123
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:16:32.812100+00:00",
+  "action": "tap",
+  "target": "com.google.android.calendar:id/next_arrow_touch",
+  "bounds": [
+   264,
+   584,
+   312,
+   632
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:16:43.742239+00:00",
+  "action": "tap",
+  "target": "Messages",
+  "bounds": [
+   73,
+   499,
+   131,
+   577
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:16:47.851778+00:00",
+  "action": "tap",
+  "target": "Messages",
+  "bounds": [
+   116,
+   39,
+   205,
+   65
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:16:53.558905+00:00",
+  "action": "tap",
+  "target": "Chrome",
+  "bounds": [
+   189,
+   499,
+   247,
+   577
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:16:57.859618+00:00",
+  "action": "skip",
+  "target": "Help make Chrome better by sending usage statistics and cras",
+  "reason": "irreversible submit \u2014 presence verified only"
+ },
+ {
+  "t": "2026-09-14T09:17:00.736109+00:00",
+  "action": "tap",
+  "target": "Accept & continue",
+  "bounds": [
+   88,
+   582,
+   231,
+   630
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:17:04.834955+00:00",
+  "action": "tap",
+  "target": "No thanks",
+  "bounds": [
+   16,
+   576,
+   104,
+   624
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:17:09.107614+00:00",
+  "action": "tap",
+  "target": "Search or type web address",
+  "bounds": [
+   26,
+   229,
+   244,
+   277
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:17:13.272972+00:00",
+  "action": "tap",
+  "target": "More",
+  "bounds": [
+   116,
+   618,
+   204,
+   640
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:17:19.063043+00:00",
+  "action": "tap",
+  "target": "",
+  "bounds": [
+   18,
+   27,
+   264,
+   77
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:17:23.190014+00:00",
+  "action": "skip",
+  "target": "Clear input",
+  "reason": "destructive keyword"
+ },
+ {
+  "t": "2026-09-14T09:17:26.091150+00:00",
+  "action": "tap",
+  "target": "Refine",
+  "bounds": [
+   272,
+   140,
+   320,
+   200
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:17:30.213086+00:00",
+  "action": "tap",
+  "target": "Refine",
+  "bounds": [
+   272,
+   200,
+   320,
+   260
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:17:34.345690+00:00",
+  "action": "tap",
+  "target": "Refine",
+  "bounds": [
+   272,
+   260,
+   320,
+   320
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:17:38.490844+00:00",
+  "action": "tap",
+  "target": "Refine",
+  "bounds": [
+   272,
+   320,
+   320,
+   380
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:17:44.292411+00:00",
+  "action": "tap",
+  "target": "iphone 18 pro max release date",
+  "bounds": [
+   18,
+   27,
+   264,
+   77
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:17:52.105952+00:00",
+  "action": "tap",
+  "target": "iphone 18 pro ma tox release date",
+  "bounds": [
+   18,
+   27,
+   264,
+   77
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:17:59.938290+00:00",
+  "action": "tap",
+  "target": "iphone 18 pro ma to tox release date",
+  "bounds": [
+   18,
+   27,
+   264,
+   77
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:18:11.093253+00:00",
+  "action": "tap",
+  "target": "Start voice search",
+  "bounds": [
+   256,
+   229,
+   304,
+   277
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:18:15.225691+00:00",
+  "action": "tap",
+  "target": "com.android.permissioncontroller:id/grant_singleton",
+  "bounds": [
+   8,
+   24,
+   312,
+   640
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:18:19.557631+00:00",
+  "action": "tap",
+  "target": "Tap to cancel",
+  "bounds": [
+   120,
+   254,
+   200,
+   334
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:18:23.801029+00:00",
+  "action": "tap",
+  "target": "Home",
+  "bounds": [
+   0,
+   24,
+   48,
+   80
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:18:27.940888+00:00",
+  "action": "tap",
+  "target": "1 open tab, tap to switch tabs",
+  "bounds": [
+   224,
+   24,
+   272,
+   80
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:18:33.771424+00:00",
+  "action": "tap",
+  "target": "More options",
+  "bounds": [
+   272,
+   24,
+   320,
+   80
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:18:38.060707+00:00",
+  "action": "tap",
+  "target": "Bookmark",
+  "bounds": [
+   108,
+   29,
+   159,
+   77
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:18:46.128892+00:00",
+  "action": "tap",
+  "target": "Search",
+  "bounds": [
+   12,
+   574,
+   308,
+   630
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:18:50.389937+00:00",
+  "action": "tap",
+  "target": "com.google.android.googlequicksearchbox:id/search_plate",
+  "bounds": [
+   8,
+   34,
+   312,
+   82
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:18:54.608712+00:00",
+  "action": "tap",
+  "target": "Go to Discover",
+  "bounds": [
+   8,
+   34,
+   56,
+   82
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:19:00.523676+00:00",
+  "action": "tap",
+  "target": "Voice search",
+  "bounds": [
+   249,
+   574,
+   305,
+   630
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:19:04.890791+00:00",
+  "action": "tap",
+  "target": "com.google.android.googlequicksearchbox:id/opa_chat_ui",
+  "bounds": [
+   0,
+   24,
+   320,
+   640
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:19:11.186653+00:00",
+  "action": "tap",
+  "target": "com.google.android.googlequicksearchbox:id/opa_main_view_inn",
+  "bounds": [
+   0,
+   24,
+   320,
+   573
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:19:15.425798+00:00",
+  "action": "tap",
+  "target": "Google Assistant menu.",
+  "bounds": [
+   272,
+   48,
+   296,
+   72
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:19:23.308050+00:00",
+  "action": "tap",
+  "target": "Set an alarm for 7 AM",
+  "bounds": [
+   109,
+   72,
+   296,
+   122
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:19:29.377715+00:00",
+  "action": "tap",
+  "target": "Alright. Your alarm's set for tomorrow at 7:00 AM.",
+  "bounds": [
+   24,
+   219,
+   296,
+   291
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:19:33.590178+00:00",
+  "action": "tap",
+  "target": "com.google.android.googlequicksearchbox:id/demand_bottom_pla",
+  "bounds": [
+   0,
+   366,
+   320,
+   367
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:19:37.795677+00:00",
+  "action": "tap",
+  "target": "Voice search button, tap to speak",
+  "bounds": [
+   74,
+   509,
+   154,
+   565
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:19:42.135992+00:00",
+  "action": "tap",
+  "target": "Tap to cancel",
+  "bounds": [
+   120,
+   509,
+   200,
+   565
+  ],
+  "open_only": false
+ },
+ {
+  "t": "2026-09-14T09:19:46.488113+00:00",
+  "action": "failure",
+  "kind": "crash",
+  "detail": "beginning of crash\n09-14 09:19:42.399   292 10209 F libc    : Fatal signal 6 (SIGABRT), code -1 (SI_QUEUE) in tid 10209 (audio.service.r), pid 292 (audio.service.r)\n09-14 09:19:42.413 10214 10214 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstone\n09-14 09:19:42.415   279   279 I tombstoned: received crash request for pid 10209\n09-14 09:19:42.416 10214 10214 I crash_dump64: performing dump of process 292 (target tid = 10209)\n09-14 09:19:42.417 10214 10214 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***\n09-14 09:19:42.417 10214 10214 F DEBUG   : Build fingerprint: 'google/sdk_gphone_x86_64/generic_x86_64_arm64:11/RSR1.240422.006/12134477:userdebug/dev-keys'\n09-14 09:19:42.417 10214 10214 F DEBUG   : Revision: '0'\n09-14 09:19:42.417 1021"
+ }
+]
