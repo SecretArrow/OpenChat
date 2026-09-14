@@ -15,7 +15,7 @@ attempt=0
 ok=0
 while [ "$attempt" -le "$MAX" ]; do
   echo "== Ubuntu E2E attempt $attempt of $MAX =="
-  if bash scripts/e2e-ubuntu.sh --ci $CLEAN --apk "$APK" --timeout "$TIMEOUT" --collect-diagnostics; then
+  if bash scripts/e2e-ubuntu.sh --ci $CLEAN --apk "$APK" --timeout "$TIMEOUT" --collect-diagnostics 2>&1 | tee -a e2e-artifacts/logs/e2e-run.log; then
     ok=1
     echo "== Ubuntu E2E PASSED on attempt $attempt =="
     break

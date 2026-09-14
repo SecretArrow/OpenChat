@@ -154,6 +154,19 @@ class Adb:
     def run_as(self, *args: str, timeout: int = ACTION_TIMEOUT) -> str:
         return self.shell("run-as", self.package, *args, timeout=timeout)
 
+    def run_as_sh(self, script: str, timeout: int = ACTION_TIMEOUT) -> str:
+        """Run a multi-command script as the app uid — routed through stdin so
+        adb's arg joining can never break quoting (semicolons, pipes)."""
+        host = tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False)
+        host.write(script)
+        host.close()
+        dev = "/data/local/tmp/e2e-appsh.sh"
+        run(self.base + ["push", host.name, dev], timeout=60)
+        self.shell("chmod", "644", dev)
+        out = self.shell(f"run-as {self.package} sh < {dev}", timeout=timeout)
+        os.unlink(host.name)
+        return out
+
     def inroot(self, script: str, timeout: int = 180) -> str:
         """Execute a shell script INSIDE the app's real Ubuntu rootfs via the
         same proot binary + environment the app uses (run-as on the debug
@@ -201,49 +214,77 @@ def parse_ui(xml: str) -> list[dict]:
     except ET.ParseError:
         return nodes
 
-    def walk(el: ET.Element) -> None:
+    def walk(el: ET.Element, path: list[dict]) -> None:
         a = el.attrib
         m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", a.get("bounds", ""))
         b = tuple(map(int, m.groups())) if m else (0, 0, 0, 0)
-        nodes.append({
+        node = {
             "text": a.get("text", ""), "desc": a.get("content-desc", ""),
             "id": a.get("resource-id", ""), "cls": a.get("class", ""),
             "pkg": a.get("package", ""), "bounds": b,
             "clickable": a.get("clickable") == "true",
             "cx": (b[0] + b[2]) // 2, "cy": (b[1] + b[3]) // 2,
-        })
+        }
+        nodes.append(node)
+        path.append(node)
         for ch in el:
-            walk(ch)
+            walk(ch, path)
+        path.pop()
 
     for ch in root:
-        walk(ch)
+        walk(ch, [])
+
+    # Compose merges semantics: a clickable Button often carries EMPTY text
+    # while its child Text node holds the visible label. Merge descendant
+    # texts into clickable ancestors (bounds containment) so label-based
+    # tapping can match the BUTTON, not just its label (E2E 34862886354).
+    for n in nodes:
+        if not (n["clickable"] and not (n["text"] or n["desc"])):
+            continue
+        x1, y1, x2, y2 = n["bounds"]
+        parts = []
+        for m2 in nodes:
+            if m2 is n or not m2["text"]:
+                continue
+            mx1, my1, mx2, my2 = m2["bounds"]
+            if mx1 >= x1 and my1 >= y1 and mx2 <= x2 and my2 <= y2:
+                parts.append(m2["text"])
+        if parts:
+            n["text"] = " ".join(parts)
     return nodes
 
 
 def find_tap(adb: Adb, labels: list[str], scroll: bool = True) -> bool:
     """Tap the best match for any label (bi-directional scroll).
 
-    CLICKABLE nodes (buttons/fields) always win over plain text nodes — the
-    status label 'not installed' contains 'install' and must never shadow
-    the real Install button (E2E run 34846959339 tapped it for 45 minutes).
+    Match priority:
+      1. clickable node whose label EQUALS a target word (the real button)
+      2. clickable node whose label CONTAINS a target word
+      3. text node whose label EQUALS a target word
+      4. text node whose label CONTAINS a target word (weakest — status
+         labels like 'not installed' contain 'install'; this is why exact
+         matches and clickable ancestors must win first, E2E 34862886354)
     """
     lw = [x.lower() for x in labels]
+
+    def rank(n: dict) -> int:
+        blob = (n["text"] + " " + n["desc"]).lower().strip()
+        hit = next((x for x in lw if x in blob), None)
+        if hit is None:
+            return -1
+        exact = blob == hit or blob.split()[0] == hit
+        clickable = n["clickable"] or "Button" in n["cls"] or "EditText" in n["cls"]
+        return (0 if clickable else 1) * 2 + (0 if exact else 1)
+
     for attempt in range(10):
         nodes = parse_ui(adb.dump_ui())
-        clickable_hit = None
-        text_hit = None
-        for n in nodes:
-            blob = (n["text"] + " " + n["desc"]).lower().strip()
-            if not blob or not any(x in blob for x in lw):
-                continue
-            if n["clickable"] or "Button" in n["cls"] or "EditText" in n["cls"]:
-                clickable_hit = clickable_hit or n
-            elif text_hit is None:
-                text_hit = n
-        target = clickable_hit or text_hit
-        if target is not None:
+        candidates = [(rank(n), n) for n in nodes]
+        candidates = [(r, n) for r, n in candidates if r >= 0]
+        if candidates:
+            candidates.sort(key=lambda t: t[0])
+            r, target = candidates[0]
             log(f"tap → '{(target['text'] or target['desc'])[:40]}' "
-                f"(clickable={bool(clickable_hit)}) at {target['cx']},{target['cy']}")
+                f"(rank={r}, clickable={target['clickable']}) at {target['cx']},{target['cy']}")
             adb.tap(target["cx"], target["cy"])
             time.sleep(SETTLE)
             return True
@@ -309,6 +350,7 @@ class E2E:
     # --- state -----------------------------------------------------------
     def read_status(self) -> dict:
         raw = self.adb.run_as("cat", "files/data/ubuntu_status.json")
+        self._last_status_raw = raw
         try:
             return json.loads(raw)
         except Exception:
@@ -368,9 +410,12 @@ class E2E:
         grab("dumpsys-meminfo", self.adb.shell("dumpsys", "meminfo", self.adb.package, timeout=60))
         grab("df", self.adb.shell("df", "-h"))
         grab("getprop", self.adb.shell("getprop"))
+        self.read_status()
+        grab("app-status-raw", getattr(self, "_last_status_raw", "") or "(empty — file missing or run-as failed)")
         grab("app-status", json.dumps(self.read_status(), indent=2))
-        grab("rootfs-listing", self.adb.run_as(
-            "sh", "-c", "ls -la files/ubuntu 2>&1; du -sm files/ubuntu/rootfs 2>/dev/null | tail -1"))
+        grab("status-file-exists", self.adb.run_as("ls", "files/data/"))
+        grab("rootfs-listing", self.adb.run_as_sh(
+            "ls -la files/ubuntu 2>&1; echo ---; du -sm files/ubuntu/rootfs 2>/dev/null | tail -1"))
         self.adb.screenshot(f"diag-{stage}")
         with open(os.path.join(self.out, "logs", "e2e-run.log"), "a") as f:
             f.write(f"\n=== failure @ {stage} {now_iso()} ===\n{self.fail_detail or ''}\n")
