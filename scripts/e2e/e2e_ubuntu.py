@@ -221,18 +221,34 @@ def parse_ui(xml: str) -> list[dict]:
 
 
 def find_tap(adb: Adb, labels: list[str], scroll: bool = True) -> bool:
-    """Tap the first node whose text/desc contains any label (bi-directional scroll)."""
+    """Tap the best match for any label (bi-directional scroll).
+
+    CLICKABLE nodes (buttons/fields) always win over plain text nodes — the
+    status label 'not installed' contains 'install' and must never shadow
+    the real Install button (E2E run 34846959339 tapped it for 45 minutes).
+    """
     lw = [x.lower() for x in labels]
     for attempt in range(10):
         nodes = parse_ui(adb.dump_ui())
+        clickable_hit = None
+        text_hit = None
         for n in nodes:
             blob = (n["text"] + " " + n["desc"]).lower().strip()
-            if blob and any(x in blob for x in lw):
-                adb.tap(n["cx"], n["cy"])
-                time.sleep(SETTLE)
-                return True
+            if not blob or not any(x in blob for x in lw):
+                continue
+            if n["clickable"] or "Button" in n["cls"] or "EditText" in n["cls"]:
+                clickable_hit = clickable_hit or n
+            elif text_hit is None:
+                text_hit = n
+        target = clickable_hit or text_hit
+        if target is not None:
+            log(f"tap → '{(target['text'] or target['desc'])[:40]}' "
+                f"(clickable={bool(clickable_hit)}) at {target['cx']},{target['cy']}")
+            adb.tap(target["cx"], target["cy"])
+            time.sleep(SETTLE)
+            return True
         if not scroll:
-            break
+            return False
         if attempt < 5:
             adb.shell("input", "swipe", "160", "500", "160", "150", "400")
         else:
@@ -260,11 +276,17 @@ def find_present(adb: Adb, labels: list[str], scroll: bool = True) -> bool:
     return False
 
 
-def nav_to_ubuntu_screen(adb: Adb) -> bool:
-    """From anywhere in the app: bottom-nav Settings → Ubuntu userspace row."""
-    if not find_tap(adb, ["settings"], scroll=False):
-        return False
-    return find_tap(adb, ["ubuntu userspace", "ubuntu"])
+def nav_settings(adb: Adb) -> bool:
+    """Bottom-nav → Settings tab. The current UI renders the Ubuntu userspace
+    card (with its inline Install button) directly on the Settings home."""
+    return find_tap(adb, ["settings"], scroll=False)
+
+
+def start_ubuntu_install(adb: Adb) -> bool:
+    """Tap the Ubuntu card's inline Install button. The Ubuntu card renders
+    BEFORE the OpenCode card in the dump, so the first clickable Install is
+    the right one."""
+    return find_tap(adb, ["reinstall", "install"], scroll=False)
 
 
 class E2E:
@@ -376,14 +398,14 @@ class E2E:
                 if force_stopped or net_toggled:
                     log(f"recoverable ERROR after interference: {(st.get('message') or '')[:160]} — retrying Install")
                     self.recoveries += 1
-                    nav_to_ubuntu_screen(self.adb)
-                    find_tap(self.adb, ["reinstall", "install"])
+                    nav_settings(self.adb)
+                    start_ubuntu_install(self.adb)
                     force_stopped = False
                     continue
                 self.fail("INSTALL_START", f"install ended in ERROR state: {st.get('message')}")
             if state == "NOT_INSTALLED" and self.recoveries > 0:
-                nav_to_ubuntu_screen(self.adb)
-                find_tap(self.adb, ["install"])
+                nav_settings(self.adb)
+                start_ubuntu_install(self.adb)
 
             # interference schedule (each ONCE, while busy states run)
             if interference and state and state != last_state:
@@ -438,7 +460,7 @@ class E2E:
                     if s4 == "READY":
                         self.fail("LIFECYCLE_INTERFERENCE",
                                   "state claimed READY after a mid-install force-stop — fake READY!")
-                    nav_to_ubuntu_screen(self.adb)
+                    nav_settings(self.adb)
                     find_tap(self.adb, ["reinstall", "install", "repair"])
 
         self.fail("INSTALL_START", f"install did not reach READY within the timeout "
@@ -484,16 +506,15 @@ class E2E:
         self.stages["APP_LAUNCH"].pass_("pid present, cold launch OK")
 
     def phase_navigate(self) -> None:
-        if not find_tap(self.adb, ["settings"], scroll=False):
+        if not nav_settings(self.adb):
             self.fail("NAVIGATE", "could not tap the Settings tab on the bottom nav")
-        if not find_tap(self.adb, ["ubuntu userspace", "ubuntu"]):
-            self.fail("NAVIGATE", "could not open the Ubuntu userspace screen")
-        ok = find_present(self.adb, ["reinstall", "install", "repair"], scroll=False)
+        ok = find_present(self.adb, ["ubuntu userspace"], scroll=False)
         self.adb.screenshot("02-ubuntu-screen")
+        if not ok:
+            self.fail("NAVIGATE", "Ubuntu userspace card not visible on the Settings home")
         st = self.record_state("initial")
-        if not ok and (st.get("state") or "").upper() != "READY":
-            self.fail("NAVIGATE", "Ubuntu screen did not show an Install/Repair entry point")
-        self.stages["NAVIGATE"].pass_(f"initial app state: {st.get('state', '?')}")
+        self.stages["NAVIGATE"].pass_(
+            f"Settings home shows the Ubuntu card; initial status file: {st.get('state', 'not written yet')}")
 
     def phase_install(self) -> None:
         st = self.record_state("before-install")
@@ -505,7 +526,7 @@ class E2E:
             self.stages["EXTRACT"].pass_("verified during the original install")
             return
         log("tapping Install — real download + verify + extract + apt begins")
-        if not find_tap(self.adb, ["reinstall", "install"], scroll=False):
+        if not start_ubuntu_install(self.adb):
             self.fail("INSTALL_START", "Install button not tappable")
         self.adb.screenshot("03-install-started")
 

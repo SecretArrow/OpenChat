@@ -22,7 +22,7 @@ on:
       e2e-timeout:
         description: 'Per-attempt E2E timeout in seconds'
         required: false
-        default: '2700'
+        default: '2100'
       clean:
         description: 'Uninstall the app first (fresh install state)'
         required: false
@@ -39,7 +39,7 @@ on:
         type: string
       e2e-timeout:
         required: false
-        default: '2700'
+        default: '2100'
         type: string
       clean:
         required: false
