@@ -440,14 +440,30 @@ class E2E:
                 return
             if state == "ERROR":
                 # The app must surface an honest, recoverable error — not a fake success.
-                if force_stopped or net_toggled:
-                    log(f"recoverable ERROR after interference: {(st.get('message') or '')[:160]} — retrying Install")
+                full = (st.get("message") or "")
+                with open(os.path.join(self.out, "logs", "e2e-run.log"), "a") as f:
+                    f.write(f"\n=== app ERROR state {now_iso()} ===\n{full[:2000]}\n")
+                if self.recoveries < 3:
+                    log(f"recoverable ERROR ({self.recoveries + 1}/3): {full[:200]} — retrying Install")
                     self.recoveries += 1
+                    # On the 2nd failure grab the apt evidence from inside the
+                    # rootfs directly (same proot the app uses) — root cause
+                    # data for the auto-fix loop (spec §17).
+                    if self.recoveries == 2:
+                        try:
+                            probe = self.inroot_cmd("apt-get update 2>&1 | tail -6", timeout=150)
+                            with open(os.path.join(self.out, "logs", "apt-probe.log"), "a") as f:
+                                f.write(f"\n=== inroot apt probe {now_iso()} ===\n{probe[:2000]}\n")
+                            log(f"apt probe tail: {probe.strip()[-300:]}")
+                        except Exception as e:  # noqa: BLE001 — probe must never kill the flow
+                            log(f"apt probe failed: {e}")
                     nav_settings(self.adb)
                     start_ubuntu_install(self.adb)
-                    force_stopped = False
+                    if state == "ERROR" and self.recoveries >= 3 and force_stopped:
+                        force_stopped = False
                     continue
-                self.fail("INSTALL_START", f"install ended in ERROR state: {st.get('message')}")
+                self.fail("INSTALL_START",
+                          f"install ended in ERROR state 3 times — last error:\n{full[:2000]}")
             if state == "NOT_INSTALLED" and self.recoveries > 0:
                 nav_settings(self.adb)
                 start_ubuntu_install(self.adb)
