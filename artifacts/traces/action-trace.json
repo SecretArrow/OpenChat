@@ -1,18 +1,18 @@
 [
  {
-  "t": "2026-09-14T09:20:09.072552+00:00",
+  "t": "2026-09-14T09:53:15.709191+00:00",
   "action": "install",
   "apk": "OpenChat-x86_64.apk"
  },
  {
-  "t": "2026-09-14T09:20:12.091454+00:00",
+  "t": "2026-09-14T09:53:18.923115+00:00",
   "action": "launch",
   "component": "com.openchat.android/com.openchat.android.MainActivity",
   "ok": true,
-  "raw": "Starting: Intent { cmp=com.openchat.android/.MainActivity }\nStatus: ok\nLaunchState: COLD\nActivity: com.openchat.android/.MainActivity\nTotalTime: 554\nWaitTime: 556\nComplete\n"
+  "raw": "Starting: Intent { cmp=com.openchat.android/.MainActivity }\nStatus: ok\nLaunchState: COLD\nActivity: com.openchat.android/.MainActivity\nTotalTime: 770\nWaitTime: 778\nComplete\n"
  },
  {
-  "t": "2026-09-14T09:20:18.732797+00:00",
+  "t": "2026-09-14T09:53:25.840622+00:00",
   "action": "tap",
   "target": "android.widget.EditText",
   "bounds": [
@@ -24,7 +24,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:20:26.332802+00:00",
+  "t": "2026-09-14T09:53:33.637458+00:00",
   "action": "tap",
   "target": "to",
   "bounds": [
@@ -36,7 +36,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:20:30.404482+00:00",
+  "t": "2026-09-14T09:53:37.742329+00:00",
   "action": "tap",
   "target": "to h",
   "bounds": [
@@ -48,7 +48,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:20:34.468061+00:00",
+  "t": "2026-09-14T09:53:41.872700+00:00",
   "action": "tap",
   "target": "to hh",
   "bounds": [
@@ -60,7 +60,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:20:38.551144+00:00",
+  "t": "2026-09-14T09:53:45.993258+00:00",
   "action": "tap",
   "target": "to hhh",
   "bounds": [
@@ -72,7 +72,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:20:44.177235+00:00",
+  "t": "2026-09-14T09:53:51.694148+00:00",
   "action": "tap",
   "target": "to hhhh",
   "bounds": [
@@ -84,7 +84,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:20:51.783958+00:00",
+  "t": "2026-09-14T09:53:59.413886+00:00",
   "action": "tap",
   "target": "to hhh toh",
   "bounds": [
@@ -96,7 +96,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:20:55.852533+00:00",
+  "t": "2026-09-14T09:54:03.527937+00:00",
   "action": "tap",
   "target": "to hhh to hh",
   "bounds": [
@@ -108,7 +108,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:20:59.935312+00:00",
+  "t": "2026-09-14T09:54:07.659457+00:00",
   "action": "tap",
   "target": "to hhh to hhh",
   "bounds": [
@@ -120,7 +120,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:21:04.035546+00:00",
+  "t": "2026-09-14T09:54:11.789339+00:00",
   "action": "tap",
   "target": "to hhh to hhhh",
   "bounds": [
@@ -132,7 +132,7 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:21:09.690636+00:00",
+  "t": "2026-09-14T09:54:17.500961+00:00",
   "action": "tap",
   "target": "to hhh to hhhhh",
   "bounds": [
@@ -144,663 +144,420 @@
   "open_only": false
  },
  {
-  "t": "2026-09-14T09:21:23.992540+00:00",
-  "action": "tap",
-  "target": "com.google.android.googlequicksearchbox:id/opa_chat_ui",
-  "bounds": [
-   0,
-   24,
-   320,
-   640
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:54:32.028509+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:21:28.067899+00:00",
-  "action": "tap",
-  "target": "com.google.android.googlequicksearchbox:id/opa_main_view_inn",
-  "bounds": [
-   0,
-   24,
-   320,
-   573
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:54:43.693991+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:21:33.707257+00:00",
-  "action": "tap",
-  "target": "Apps list",
-  "bounds": [
-   151,
-   493,
-   169,
-   499
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:54:58.940990+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:21:37.770566+00:00",
-  "action": "tap",
-  "target": "com.google.android.apps.nexuslauncher:id/universal_smartspac",
-  "bounds": [
-   15,
-   32,
-   305,
-   123
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:55:10.781068+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:21:41.868429+00:00",
-  "action": "tap",
-  "target": "com.google.android.calendar:id/next_arrow_touch",
-  "bounds": [
-   264,
-   584,
-   312,
-   632
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:55:26.093506+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:21:52.775563+00:00",
-  "action": "tap",
-  "target": "Monday, Sep 14",
-  "bounds": [
-   63,
-   32,
-   256,
-   123
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:55:37.777506+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:21:58.432961+00:00",
-  "action": "tap",
-  "target": "Messages",
-  "bounds": [
-   73,
-   499,
-   131,
-   577
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:55:45.860615+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:22:02.545766+00:00",
-  "action": "tap",
-  "target": "Messages",
-  "bounds": [
-   116,
-   39,
-   205,
-   65
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:55:57.526852+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:22:06.665936+00:00",
-  "action": "tap",
-  "target": "Search messages",
-  "bounds": [
-   232,
-   28,
-   280,
-   76
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:56:05.626111+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:22:10.749410+00:00",
-  "action": "tap",
-  "target": "Go back",
-  "bounds": [
-   20,
-   33,
-   68,
-   81
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:56:31.777085+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:22:14.848372+00:00",
-  "action": "tap",
-  "target": "More options",
-  "bounds": [
-   280,
-   28,
-   320,
-   76
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:56:47.076873+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:22:22.453705+00:00",
-  "action": "tap",
-  "target": "Start chat",
-  "bounds": [
-   158,
-   560,
-   296,
-   616
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:57:02.428209+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:22:26.576152+00:00",
-  "action": "tap",
-  "target": "Type a name, phone number, or email",
-  "bounds": [
-   72,
-   80,
-   272,
-   128
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:57:10.558016+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:22:30.699098+00:00",
-  "action": "tap",
-  "target": "Switch between entering text and numbers",
-  "bounds": [
-   272,
-   80,
-   320,
-   128
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:57:18.663282+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:22:34.782292+00:00",
-  "action": "tap",
-  "target": "com.google.android.apps.messaging:id/contact_picker_create_g",
-  "bounds": [
-   0,
-   137,
-   320,
-   201
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:57:26.785869+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:22:38.847535+00:00",
-  "action": "tap",
-  "target": "Navigate up",
-  "bounds": [
-   0,
-   24,
-   56,
-   80
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:57:45.725923+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:22:46.525087+00:00",
-  "action": "tap",
-  "target": "3",
-  "bounds": [
-   72,
-   80,
-   272,
-   128
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:57:53.828757+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:23:11.255378+00:00",
-  "action": "tap",
-  "target": "Chrome",
-  "bounds": [
-   189,
-   499,
-   247,
-   577
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:58:16.546226+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:23:15.351833+00:00",
-  "action": "tap",
-  "target": "Search or type web address",
-  "bounds": [
-   26,
-   229,
-   244,
-   277
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:58:24.676128+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:23:19.441163+00:00",
-  "action": "tap",
-  "target": "More",
-  "bounds": [
-   116,
-   618,
-   204,
-   640
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:58:32.793964+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:23:23.568135+00:00",
-  "action": "tap",
-  "target": "",
-  "bounds": [
-   18,
-   27,
-   264,
-   77
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:58:48.245822+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:23:27.692777+00:00",
-  "action": "skip",
-  "target": "Clear input",
-  "reason": "destructive keyword"
+  "t": "2026-09-14T09:59:03.695758+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:23:31.418443+00:00",
-  "action": "tap",
-  "target": "Refine",
-  "bounds": [
-   272,
-   140,
-   320,
-   200
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:59:33.877402+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:23:35.557323+00:00",
-  "action": "tap",
-  "target": "Refine",
-  "bounds": [
-   272,
-   200,
-   320,
-   260
-  ],
-  "open_only": false
+  "t": "2026-09-14T09:59:56.636151+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:23:39.671238+00:00",
-  "action": "tap",
-  "target": "Refine",
-  "bounds": [
-   272,
-   260,
-   320,
-   320
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:00:04.759451+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:23:43.784748+00:00",
-  "action": "tap",
-  "target": "Refine",
-  "bounds": [
-   272,
-   320,
-   320,
-   380
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:00:16.611994+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:23:47.916699+00:00",
-  "action": "tap",
-  "target": "toy story 5 release streaming",
-  "bounds": [
-   18,
-   27,
-   264,
-   77
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:00:32.145074+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:23:55.699408+00:00",
-  "action": "tap",
-  "target": "toy story 5 releas toe streaming",
-  "bounds": [
-   18,
-   27,
-   264,
-   77
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:00:47.641580+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:24:06.531004+00:00",
-  "action": "tap",
-  "target": "Start voice search",
-  "bounds": [
-   256,
-   229,
-   304,
-   277
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:01:03.059159+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:24:10.795914+00:00",
-  "action": "tap",
-  "target": "Tap to cancel",
-  "bounds": [
-   120,
-   254,
-   200,
-   334
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:01:11.258195+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:24:14.992526+00:00",
-  "action": "tap",
-  "target": "Home",
-  "bounds": [
-   0,
-   24,
-   48,
-   80
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:01:19.426871+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:24:20.790507+00:00",
-  "action": "tap",
-  "target": "Search",
-  "bounds": [
-   12,
-   574,
-   308,
-   630
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:01:27.644179+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:24:24.937412+00:00",
-  "action": "tap",
-  "target": "com.google.android.googlequicksearchbox:id/search_plate",
-  "bounds": [
-   8,
-   34,
-   312,
-   82
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:01:35.777225+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:24:29.066120+00:00",
-  "action": "tap",
-  "target": "Go to Discover",
-  "bounds": [
-   8,
-   34,
-   56,
-   82
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:01:47.736045+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:24:33.232967+00:00",
-  "action": "tap",
-  "target": "com.google.android.googlequicksearchbox:id/touch_outside",
-  "bounds": [
-   0,
-   24,
-   320,
-   632
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:02:10.609223+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:24:37.400818+00:00",
-  "action": "tap",
-  "target": "Sign in",
-  "bounds": [
-   256,
-   24,
-   312,
-   72
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:02:29.891819+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:24:45.335857+00:00",
-  "action": "tap",
-  "target": "Learn more about using your account",
-  "bounds": [
-   21,
-   230,
-   299,
-   272
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:02:41.741729+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:24:49.529267+00:00",
-  "action": "tap",
-  "target": "Close",
-  "bounds": [
-   216,
-   458,
-   280,
-   495
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:02:53.627058+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:24:53.703117+00:00",
-  "action": "tap",
-  "target": "identifierId",
-  "bounds": [
-   25,
-   304,
-   295,
-   358
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:03:01.824873+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:24:57.850809+00:00",
-  "action": "tap",
-  "target": "identifierId",
-  "bounds": [
-   26,
-   305,
-   294,
-   357
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:03:09.957485+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:25:02.017630+00:00",
-  "action": "tap",
-  "target": "Forgot email?",
-  "bounds": [
-   21,
-   368,
-   116,
-   388
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:03:29.390361+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:25:06.271588+00:00",
-  "action": "tap",
-  "target": "recoveryIdentifierId",
-  "bounds": [
-   25,
-   240,
-   295,
-   294
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:03:37.508587+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:25:12.123234+00:00",
-  "action": "tap",
-  "target": "recoveryIdentifierId",
-  "bounds": [
-   26,
-   241,
-   294,
-   293
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:03:52.974745+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:25:16.314081+00:00",
-  "action": "tap",
-  "target": "Next",
-  "bounds": [
-   217,
-   345,
-   296,
-   381
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:04:08.623959+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:25:20.496509+00:00",
-  "action": "tap",
-  "target": "Next",
-  "bounds": [
-   217,
-   361,
-   296,
-   397
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:04:16.758692+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:25:28.043588+00:00",
-  "action": "tap",
-  "target": "Next",
-  "bounds": [
-   217,
-   578,
-   296,
-   614
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:04:32.341206+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:25:56.960095+00:00",
-  "action": "tap",
-  "target": "Create account",
-  "bounds": [
-   16,
-   578,
-   135,
-   614
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:04:40.490664+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:26:01.077536+00:00",
-  "action": "tap",
-  "target": "For my personal use",
-  "bounds": [
-   16,
-   426,
-   225,
-   474
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:04:48.740425+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:26:05.890322+00:00",
-  "action": "tap",
-  "target": "firstName",
-  "bounds": [
-   26,
-   248,
-   294,
-   300
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:05:00.656841+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:26:10.123844+00:00",
-  "action": "tap",
-  "target": "lastName",
-  "bounds": [
-   26,
-   328,
-   294,
-   380
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:05:08.910915+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:26:17.915835+00:00",
-  "action": "tap",
-  "target": "To",
-  "bounds": [
-   26,
-   328,
-   294,
-   380
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:05:24.591693+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:26:41.281009+00:00",
-  "action": "tap",
-  "target": "TURN ON",
-  "bounds": [
-   234,
-   378,
-   294,
-   426
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:05:47.675086+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:26:47.084793+00:00",
-  "action": "tap",
-  "target": "com.google.android.googlequicksearchbox:id/search_plate",
-  "bounds": [
-   8,
-   154,
-   312,
-   202
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:05:55.856870+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:26:51.277311+00:00",
-  "action": "tap",
-  "target": "com.google.android.googlequicksearchbox:id/search_plate",
-  "bounds": [
-   8,
-   32,
-   312,
-   80
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:06:04.058932+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:26:55.447286+00:00",
-  "action": "tap",
-  "target": "Go to Discover",
-  "bounds": [
-   8,
-   32,
-   56,
-   80
-  ],
-  "open_only": false
+  "t": "2026-09-14T10:06:12.256913+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
  },
  {
-  "t": "2026-09-14T09:26:59.681859+00:00",
+  "t": "2026-09-14T10:06:24.189875+00:00",
+  "action": "refocus",
+  "reason": "window is not the app under test"
+ },
+ {
+  "t": "2026-09-14T10:06:37.327861+00:00",
+  "action": "fuzz-input",
+  "length": 0,
+  "sample": ""
+ },
+ {
+  "t": "2026-09-14T10:06:52.588784+00:00",
+  "action": "fuzz-input",
+  "length": 1,
+  "sample": "a"
+ },
+ {
+  "t": "2026-09-14T10:07:09.543910+00:00",
+  "action": "fuzz-input",
+  "length": 300,
+  "sample": "xxxxxxxxxxxxxxxxxxxxxxxx"
+ },
+ {
+  "t": "2026-09-14T10:07:24.466740+00:00",
+  "action": "fuzz-input",
+  "length": 11,
+  "sample": "h\u00e9llo w\u00f6rld"
+ },
+ {
+  "t": "2026-09-14T10:07:39.435498+00:00",
+  "action": "fuzz-input",
+  "length": 13,
+  "sample": "\ud83c\udf89\ud83d\ude80 emoji test"
+ },
+ {
+  "t": "2026-09-14T10:07:54.746204+00:00",
+  "action": "fuzz-input",
+  "length": 10,
+  "sample": "1234567890"
+ },
+ {
+  "t": "2026-09-14T10:08:10.040905+00:00",
+  "action": "fuzz-input",
+  "length": 3,
+  "sample": "-42"
+ },
+ {
+  "t": "2026-09-14T10:08:25.364365+00:00",
+  "action": "fuzz-input",
+  "length": 7,
+  "sample": "3.14159"
+ },
+ {
+  "t": "2026-09-14T10:08:40.628770+00:00",
+  "action": "fuzz-input",
+  "length": 12,
+  "sample": "   spaces   "
+ },
+ {
+  "t": "2026-09-14T10:08:55.564507+00:00",
+  "action": "fuzz-input",
+  "length": 25,
+  "sample": "<script>alert(1)</script"
+ },
+ {
+  "t": "2026-09-14T10:09:10.320129+00:00",
+  "action": "fuzz-input",
+  "length": 22,
+  "sample": "'; DROP TABLE users;--"
+ },
+ {
+  "t": "2026-09-14T10:09:25.696947+00:00",
+  "action": "fuzz-input",
+  "length": 6,
+  "sample": "%s%n%d"
+ },
+ {
+  "t": "2026-09-14T10:09:41.100011+00:00",
+  "action": "fuzz-input",
+  "length": 18,
+  "sample": "\\\\\\ backslashes \\\\"
+ },
+ {
+  "t": "2026-09-14T10:09:55.945360+00:00",
+  "action": "fuzz-input",
+  "length": 7,
+  "sample": "\u65e5\u672c\u8a9e\u30c6\u30ad\u30b9\u30c8"
+ },
+ {
+  "t": "2026-09-14T10:10:11.296211+00:00",
+  "action": "fuzz-input",
+  "length": 4,
+  "sample": "null"
+ },
+ {
+  "t": "2026-09-14T10:10:26.815202+00:00",
+  "action": "fuzz-input",
+  "length": 9,
+  "sample": "undefined"
+ },
+ {
+  "t": "2026-09-14T10:10:35.344704+00:00",
+  "action": "lifecycle",
+  "step": "rotate"
+ },
+ {
+  "t": "2026-09-14T10:10:38.226487+00:00",
+  "action": "lifecycle",
+  "step": "rotate-back"
+ },
+ {
+  "t": "2026-09-14T10:10:41.208450+00:00",
+  "action": "lifecycle",
+  "step": "background"
+ },
+ {
+  "t": "2026-09-14T10:10:44.646121+00:00",
+  "action": "lifecycle",
+  "step": "foreground"
+ },
+ {
+  "t": "2026-09-14T10:10:47.501041+00:00",
+  "action": "lifecycle",
+  "step": "lock"
+ },
+ {
+  "t": "2026-09-14T10:10:50.972011+00:00",
+  "action": "lifecycle",
+  "step": "unlock"
+ },
+ {
+  "t": "2026-09-14T10:10:54.346740+00:00",
+  "action": "lifecycle",
+  "step": "force-stop"
+ },
+ {
+  "t": "2026-09-14T10:10:59.206134+00:00",
   "action": "failure",
-  "kind": "crash",
-  "detail": "beginning of crash\n09-14 09:26:55.774 10230 15199 F libc    : Fatal signal 6 (SIGABRT), code -1 (SI_QUEUE) in tid 15199 (HwBinder:10230_), pid 10230 (audio.service.r)\n09-14 09:26:55.781 15205 15205 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstone\n09-14 09:26:55.782   279   279 I tombstoned: received crash request for pid 15199\n09-14 09:26:55.782 15205 15205 I crash_dump64: performing dump of process 10230 (target tid = 15199)\n09-14 09:26:55.783 15205 15205 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***\n09-14 09:26:55.783 15205 15205 F DEBUG   : Build fingerprint: 'google/sdk_gphone_x86_64/generic_x86_64_arm64:11/RSR1.240422.006/12134477:userdebug/dev-keys'\n09-14 09:26:55.783 15205 15205 F DEBUG   : Revision: '0'\n09-14 09:26:55.783 "
+  "kind": "dead",
+  "detail": "app process is gone"
  }
 ]

@@ -1,10 +1,10 @@
 # Release Test Report
 
-- Generated: 2026-09-14T09:26:59.752561+00:00
+- Generated: 2026-09-14T10:10:59.217616+00:00
 - Application: com.openchat.android.MainActivity
 - Package: `com.openchat.android`
 - Version: 0.1.9 (code 101)
-- Commit: `6ffb1c07faa575b6c2c33a7536037e62125d9a1b`
+- Commit: `77557f7cd92b8c707d672a3ee5dc49604fe2a6a5`
 - APK: `OpenChat-x86_64.apk`
 - Android API: 30
 - Device: sdk_gphone_x86_64
@@ -16,15 +16,15 @@
 
 ## Feature Discovery
 
-- Discovered elements (peak on one screen): 23
-- Tested: 65
-- Skipped by safety engine: 1
-- Screens seen: 13
+- Discovered elements (peak on one screen): 1
+- Tested: 11
+- Skipped by safety engine: 0
+- Screens seen: 2
 - Confirmation flows cancelled safely: 0
 
 ## Crashes
 
-- beginning of crash 09-14 09:26:55.774 10230 15199 F libc    : Fatal signal 6 (SIGABRT), code -1 (SI_QUEUE) in tid 15199 (HwBinder:10230_), pid 10230 (audio.service.r) 09-14 09:26:55.781 15205 15205 I 
+- none
 
 ## ANR
 
@@ -32,7 +32,7 @@
 
 ## Lifecycle
 
-- pass: 0 · fail: 0
+- pass: 6 · fail: 1
 
 ## Permissions
 
@@ -48,7 +48,7 @@
 
 ## Visual
 
-- screenshots: 2
+- screenshots: 3
 
 ## Random Exploration
 
@@ -64,7 +64,8 @@
 
 ## Remaining Problems
 
-- [crash] beginning of crash 09-14 09:26:55.774 10230 15199 F libc    : Fatal signal 6 (SIGABRT), code -1 (SI_QUEUE) in tid 15199 (HwBinder:10230_), pid 10230 (audio.service.r) 09-14 09:26:55.781 15205 
+- [dead] app process is gone
+- [lifecycle] force-stop: process died after lifecycle force-stop
 
 ## Final Recommendation
 
