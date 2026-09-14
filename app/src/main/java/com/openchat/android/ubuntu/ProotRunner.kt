@@ -145,6 +145,19 @@ class ProotRunner(
     companion object {
         const val TAG = "OpenChat/Proot"
 
+        /**
+         * x86_64 pins proot v5.4.1 (official static build): 5.3.0 calls
+         * syscalls that post-4.9-era Android seccomp allowlists (per-targetSdk
+         * policies) answer with SIGSYS — proot died silently and the shell
+         * reported exit 159 (128+31), killing apt/Node/python in-app while the
+         * same binary worked unfiltered. 5.4.x adds faccessat2 + clone3
+         * handling (proot-me release notes v5.4.0/v5.4.1). SHA-256 is the
+         * real value from the release SHA256SUMS.
+         *
+         * arm64/armhf stay on v5.3.0: proot-me does not publish official
+         * static Android arm builds for 5.4.x yet — use `prootUrlOverride`
+         * (advanced settings) with a self-built 5.4.x if needed.
+         */
         const val PROOT_AARCH64_URL: String =
             "https://github.com/proot-me/proot/releases/download/v5.3.0/proot-v5.3.0-aarch64-static"
         const val PROOT_AARCH64_SHA256: String =
@@ -154,9 +167,9 @@ class ProotRunner(
         const val PROOT_ARM_SHA256: String =
             "bf186a37c7a19621e5bf3cfdf6bce54bfa2e220f91eb7196318e699ac174cc69"
         const val PROOT_X86_64_URL: String =
-            "https://github.com/proot-me/proot/releases/download/v5.3.0/proot-v5.3.0-x86_64-static"
+            "https://github.com/proot-me/proot/releases/download/v5.4.1/proot"
         const val PROOT_X86_64_SHA256: String =
-            "d1eb20cb201e6df08d707023efb000623ff7c10d6574839d7bb42d0adba6b4da"
+            "19f44283f5c0e73091c60195f5fcd4f4c1165505e44410d434e2ab1b677c1a09"
 
         /**
          * Base environment for every proot process (pure function — JVM-tested).
