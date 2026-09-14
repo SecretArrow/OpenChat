@@ -69,7 +69,7 @@ data class ProviderPreset(
             val arr: JSONArray = root.optJSONArray("providers") ?: return emptyList()
             (0 until arr.length()).mapNotNull { i ->
                 runCatching { fromJson(arr.getJSONObject(i)) }.getOrNull()
-            }
+            }.filter { it.connections.isNotEmpty() }   // a preset without connections is unusable
         }.getOrDefault(emptyList())
 
         fun fromJson(o: JSONObject): ProviderPreset {
