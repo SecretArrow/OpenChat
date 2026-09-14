@@ -55,8 +55,10 @@ data class ProviderPreset(
         }
     }
 
-    fun connection(protocol: String?): PresetConnection? =
-        connections[resolveProtocolKey(protocol)]
+    fun connection(protocol: String?): PresetConnection? {
+        val key = protocol?.lowercase()?.trim().orEmpty()
+        return connections[key]
+    }
 
     fun isMultiProtocol(): Boolean =
         connections.keys.filter { it != "auto" }.distinct().size > 1
