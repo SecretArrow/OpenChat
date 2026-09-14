@@ -307,7 +307,7 @@ class ChatService(
             },
         )
         appendToolBlock(conversationId, block)
-        val context = result.getOrNull()?.let { WebSearch.contextBlock(query, it) }
+        val context = result.getOrNull()?.let { WebSearchParser.contextBlock(query, it) }
         return block to context
     }
 

@@ -493,6 +493,7 @@ fun ChatScreen(onOpenTerminal: (() -> Unit)? = null) {
 }
 
 /** Renders one message: user bubble (right) or assistant card (left) with tools. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MessageRow(msg: ChatMessage) {
     val models by AppGraph.models.models.collectAsState()
@@ -580,6 +581,7 @@ private fun MessageRow(msg: ChatMessage) {
 }
 
 /** Tool execution block: label, monospace selectable command, collapsible output. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ToolBlockCard(block: ToolBlock) {
     var expanded by remember(block.id) { mutableStateOf(false) }
