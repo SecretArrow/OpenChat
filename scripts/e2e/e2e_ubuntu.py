@@ -454,8 +454,38 @@ class E2E:
                 with open(os.path.join(self.out, "logs", "seccomp-kills.log"), "a") as f:
                     f.write(f"\n=== dmesg @ ERROR {now_iso()} ===\n{kills_now or '(none)'}\n")
                 if self.recoveries < 3:
-                    log(f"recoverable ERROR ({self.recoveries + 1}/3): {full[:200]} — retrying Install")
+                    log(f"recoverable ERROR ({self.recoveries + 1}/3): {full[:200]} — retrying via Repair")
                     self.recoveries += 1
+                    # Repair (unlike Install) keeps /root — so instrumented
+                    # /root/.profile + /root/aptwrap.sh written here survive
+                    # the re-extract and hook the NEXT attempt's login shell:
+                    # the profile logs whether it runs, probes /bin/true, and
+                    # swaps apt-get for a logging wrapper. If the guest dies
+                    # with SIGSYS the shell prints "Bad system call" into the
+                    # app's captured output tail — definitive confirmation.
+                    try:
+                        hook = self.adb.run_as_sh(
+                            "mkdir -p files/ubuntu/rootfs/root\n"
+                            "cat > files/ubuntu/rootfs/root/aptwrap.sh <<'EOF'\n"
+                            "#!/bin/bash\n"
+                            "echo \"APT_EXEC args: $*\" >> /tmp/w.txt\n"
+                            "/usr/bin/apt-get.real \"$@\"\n"
+                            "echo \"APT_RC=$?\" >> /tmp/w.txt\n"
+                            "EOF\n"
+                            "cat > files/ubuntu/rootfs/root/.profile <<'EOF'\n"
+                            "echo \"PROFILE_RAN\" >> /tmp/w.txt\n"
+                            "{ /bin/true; echo \"TRUE_RC=$?\"; } >> /tmp/w.txt 2>&1\n"
+                            "cp /root/aptwrap.sh /usr/bin/aptwrap.sh 2>/dev/null\n"
+                            "mv /usr/bin/apt-get /usr/bin/apt-get.real 2>/dev/null\n"
+                            "cp /root/aptwrap.sh /usr/bin/apt-get 2>/dev/null\n"
+                            "echo \"HOOKED\" >> /tmp/w.txt\n"
+                            "EOF\n"
+                            "chmod 755 files/ubuntu/rootfs/root/aptwrap.sh files/ubuntu/rootfs/root/probe.sh 2>/dev/null\n"
+                            "echo HOOK_WRITTEN\n")
+                        probe_lines_log = f"hook write: {hook.strip()[:60]}"
+                        log(probe_lines_log)
+                    except Exception as he:  # noqa: BLE001
+                        log(f"hook write failed: {he}")
                     # On the 2nd failure grab the apt evidence from inside the
                     # rootfs directly (same proot the app uses) — root cause
                     # data for the auto-fix loop (spec §17).
@@ -493,6 +523,9 @@ class E2E:
                                 if re.search(r"type=1326|sig=31|code=0x", l)
                             )[-3000:]
                             probe_lines.append("dmesg seccomp-kill audit (type=1326):\n" + (kills or "(none)"))
+                            # The login-hook log from the previous Repair attempt
+                            wlog = self.adb.run_as("cat", "files/ubuntu/rootfs/tmp/w.txt")
+                            probe_lines.append("in-app hook log (/tmp/w.txt):\n" + (wlog.strip()[:800] or "(empty — profile never ran or rootfs was re-extracted)"))
 
                             # 4) THE decisive capture: run a probe script from
                             # the app's Terminal tab — that bash runs in the
@@ -534,7 +567,7 @@ class E2E:
                         except Exception as e:  # noqa: BLE001 — probe must never kill the flow
                             log(f"apt probe failed: {e}")
                     nav_settings(self.adb)
-                    start_ubuntu_install(self.adb)
+                    find_tap(self.adb, ["repair", "reinstall", "install"])
                     if state == "ERROR" and self.recoveries >= 3 and force_stopped:
                         force_stopped = False
                     continue
