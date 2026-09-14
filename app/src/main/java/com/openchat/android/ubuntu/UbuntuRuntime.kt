@@ -270,14 +270,45 @@ class UbuntuRuntime(
             addLog("SHA-256 verified: $effectiveSha")
         }
 
-        // ---- EXTRACTING (fresh install clears the old rootfs; repair keeps /root) ----
+        // ---- EXTRACTING ----------------------------------------------------
+        // Fresh install: extract into a STAGING directory, validate, then swap
+        // atomically (spec §28) — a crash mid-extraction can never leave a
+        // partial rootfs in place or a fake READY behind. Repair keeps its
+        // in-place over-extract semantics (preserves the user's /root data).
         val rootfs = rootfsDir()
+        val staging = UbuntuFileSystem.importStagingDir(context)
         if (!repair) {
             addLog("Clearing any previous rootfs…")
-            rootfs.deleteRecursively()
+            withContext(Dispatchers.IO) { rootfs.deleteRecursively() }
+            setState(UbuntuState.EXTRACTING, "Extracting rootfs (staging)…", 55)
+            withContext(Dispatchers.IO) {
+                staging.deleteRecursively()
+                staging.mkdirs()
+            }
+            installer.extract(tarball, staging).getOrElse { return failStep("Extraction failed", it) }
+            setState(UbuntuState.EXTRACTING, "Validating the staged rootfs…", 62)
+            val stagedBash = File(staging, "bin/bash").isFile
+            if (!stagedBash) {
+                withContext(Dispatchers.IO) { staging.deleteRecursively() }
+                return failStep(
+                    "Extraction validation failed",
+                    IllegalStateException(
+                        "staged rootfs has no bin/bash — the archive is incomplete or corrupt; nothing was installed",
+                    ),
+                )
+            }
+            setState(UbuntuState.EXTRACTING, "Swapping the verified rootfs into place…", 65)
+            withContext(Dispatchers.IO) {
+                if (rootfs.exists()) rootfs.deleteRecursively()
+                if (!staging.renameTo(rootfs)) {
+                    staging.copyRecursively(rootfs, overwrite = true)
+                    staging.deleteRecursively()
+                }
+            }
+        } else {
+            setState(UbuntuState.EXTRACTING, "Extracting rootfs (repair keeps /root)…", 55)
+            installer.extract(tarball, rootfs).getOrElse { return failStep("Extraction failed", it) }
         }
-        setState(UbuntuState.EXTRACTING, "Extracting rootfs…", 55)
-        installer.extract(tarball, rootfs).getOrElse { return failStep("Extraction failed", it) }
         setState(UbuntuState.EXTRACTING, "Rootfs extracted (${rootfs.absolutePath})", 65)
 
         // ---- CONFIGURING ----

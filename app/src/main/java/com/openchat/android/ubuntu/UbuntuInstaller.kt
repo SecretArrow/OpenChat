@@ -32,9 +32,31 @@ class UbuntuInstaller(private val context: Context) {
      *
      * Reuses an already-cached file when its hash matches.
      *
+     * Transient network failures (timeout, connection reset, HTTP 5xx) are
+     * retried ONCE after a short backoff (spec §19 retry policy). Checksum
+     * mismatches are NOT retried — a wrong hash means a corrupt/tampered
+     * artifact and a retry would only repeat it.
+     *
      * @param onProgress (bytesRead, totalBytes — total is -1 when unknown)
      */
     suspend fun downloadAndVerify(
+        url: String,
+        sha256: String,
+        onProgress: (Long, Long) -> Unit,
+    ): Result<File> {
+        val first = attemptDownload(url, sha256, onProgress)
+        if (first.isSuccess) return first
+        val err = first.exceptionOrNull() ?: return first
+        val transient = err.message?.contains("SHA-256 mismatch") != true
+        if (transient && err.message?.contains("could not open") != true) {
+            kotlinx.coroutines.delay(3000)
+            Log.w(TAG, "transient download failure — retrying once after 3s: ${err.message?.take(160)}")
+            return attemptDownload(url, sha256, onProgress)
+        }
+        return first
+    }
+
+    private suspend fun attemptDownload(
         url: String,
         sha256: String,
         onProgress: (Long, Long) -> Unit,

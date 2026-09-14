@@ -525,8 +525,10 @@ class Engine:
             self.known_pids.add(p)
         return bool(p)
 
-    def health(self, after: str) -> None:
-        """Post-action health gate (§14, §15)."""
+    def health(self, after: str, require_alive: bool = True) -> None:
+        """Post-action health gate (§14, §15). [require_alive]=False for steps
+        that legitimately kill the process (force-stop) — crash/ANR checks
+        still run."""
         crash = self.crash_scan()
         if crash:
             f = Failure("crash", crash[:800])
@@ -540,7 +542,7 @@ class Engine:
             self.stats.anrs.append("ANR in " + after)
             self.save_failure_artifacts(f)
             raise RuntimeError(f"ANR after {after}")
-        if not self.alive():
+        if require_alive and not self.alive():
             f = Failure("dead", "app process is gone")
             self.failures.append(f)
             self.save_failure_artifacts(f)
@@ -687,12 +689,15 @@ class Engine:
 
     def phase_lifecycle(self) -> None:
         """Rotation, background/foreground, lock, force-stop+restart (§10, §13)."""
-        def step(name: str, fn) -> None:
+        def step(name: str, fn, require_alive: bool = True) -> None:
             self.trace_add("lifecycle", step=name)
             try:
                 fn()
                 self.settle(2.5)
-                self.health(f"lifecycle {name}")
+                # Crash/ANR are always checked; process liveness only when the
+                # step did not intentionally terminate the app (force-stop
+                # DOES — the restart step brings it back, run 34828963361).
+                self.health(f"lifecycle {name}", require_alive=require_alive)
                 self.stats.lifecycle["pass"] += 1
             except Exception as e:  # noqa: BLE001
                 self.stats.lifecycle["fail"] += 1
@@ -706,7 +711,7 @@ class Engine:
         step("foreground", lambda: self.adb.launch(self.app["component"]))
         step("lock", lambda: self.adb.shell("input", "keyevent", "26"))
         step("unlock", lambda: (self.adb.wake()))
-        step("force-stop", lambda: self.adb.force_stop(self.app["package"]))
+        step("force-stop", lambda: self.adb.force_stop(self.app["package"]), require_alive=False)
         step("restart", lambda: self.adb.launch(self.app["component"]))
         # persistence sanity: app must come back to a usable UI (§13)
         self.settle(3)
