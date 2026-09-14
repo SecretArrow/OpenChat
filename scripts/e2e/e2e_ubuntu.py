@@ -451,10 +451,31 @@ class E2E:
                     # data for the auto-fix loop (spec §17).
                     if self.recoveries == 2:
                         try:
-                            probe = self.inroot_cmd("apt-get update 2>&1 | tail -6", timeout=150)
+                            probe_lines = []
+                            for name, cmd in [
+                                ("uname", "uname -m"),
+                                ("apt-version", "apt --version"),
+                                ("apt-get-update", "apt-get update"),
+                            ]:
+                                out = self.inroot_cmd(f"{cmd} >/dev/null 2>&1 && echo PROBE_OK || echo PROBE_FAIL", timeout=150)
+                                probe_lines.append(f"{name}: {out.strip()[-40:]}")
+                                detail = self.inroot_cmd(cmd, timeout=150)
+                                probe_lines.append(f"{name}-output: {detail.strip()[:300]}")
+                            # Kernel-side truth: seccomp kills log the blocked
+                            # syscall number in dmesg. google_apis emulators
+                            # allow `adb root` — best effort, never fatal.
+                            run(self.adb.base + ["root"], timeout=60)
+                            time.sleep(3)
+                            dmesg = self.adb.shell("dmesg")
+                            seccomp = "\n".join(
+                                l for l in dmesg.split("\n")
+                                if re.search(r"seccomp|ptrace|SIGSYS|avc.*denied", l, re.I)
+                            )[-3000:]
+                            probe_lines.append("dmesg seccomp/avc tail:\n" + (seccomp or "(no matches — dmesg unreadable or empty)"))
+                            body = "\n".join(probe_lines)
                             with open(os.path.join(self.out, "logs", "apt-probe.log"), "a") as f:
-                                f.write(f"\n=== inroot apt probe {now_iso()} ===\n{probe[:2000]}\n")
-                            log(f"apt probe tail: {probe.strip()[-300:]}")
+                                f.write(f"\n=== inroot apt probe {now_iso()} ===\n{body[:4000]}\n")
+                            log(f"apt probe: {body[:400]}")
                         except Exception as e:  # noqa: BLE001 — probe must never kill the flow
                             log(f"apt probe failed: {e}")
                     nav_settings(self.adb)
