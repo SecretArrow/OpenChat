@@ -13,31 +13,47 @@ import org.junit.Test
 class RootfsCatalogTest {
 
     @Test
-    fun `jammy variants are pinned for the three supported ABIs`() {
+    fun `focal variants are the pinned default for the three supported ABIs`() {
+        // Default = focal (glibc 2.31): jammy+ bases use clone3(2), which the
+        // Android seccomp allowlist answers with SIGSYS — apt dies silently
+        // with exit 159 (128+31). Focal predates clone3. Hashes are real
+        // values from cdimage's SHA256SUMS (spec §32).
         val arm64 = RootfsCatalog.forAbi("arm64-v8a")
-        assertEquals("jammy", arm64.codename)
-        assertEquals("22.04", arm64.ubuntuVersion)
+        assertEquals("focal", arm64.codename)
+        assertEquals("20.04", arm64.ubuntuVersion)
         assertEquals(
-            "https://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release/ubuntu-base-22.04.5-base-arm64.tar.gz",
+            "https://cdimage.ubuntu.com/ubuntu-base/releases/20.04/release/ubuntu-base-20.04.5-base-arm64.tar.gz",
             arm64.url,
         )
-        assertEquals("075d4abd2817a5023ab0a82f5cb314c5ec0aa64a9c0b40fd3154ca3bfdae979f", arm64.sha256)
+        assertEquals("f9b999afb4c4b10193087ea8c11be36d688f19e609b05179b571f29357954b52", arm64.sha256)
 
         val armhf = RootfsCatalog.forAbi("armeabi-v7a")
-        assertEquals("jammy", armhf.codename)
+        assertEquals("focal", armhf.codename)
         assertEquals(
-            "https://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release/ubuntu-base-22.04.5-base-armhf.tar.gz",
+            "https://cdimage.ubuntu.com/ubuntu-base/releases/20.04/release/ubuntu-base-20.04.5-base-armhf.tar.gz",
             armhf.url,
         )
-        assertEquals("fd77cb0659326b75c08ce06b6b8649d2e13ef9a704a8e9212fec32cb97d42add", armhf.sha256)
+        assertEquals("6bcbfa7f603d79d368d40e138dad98938907d2fb0d6416521417cf8702c2f5de", armhf.sha256)
 
         val amd64 = RootfsCatalog.forAbi("x86_64")
-        assertEquals("jammy", amd64.codename)
+        assertEquals("focal", amd64.codename)
         assertEquals(
-            "https://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release/ubuntu-base-22.04.5-base-amd64.tar.gz",
+            "https://cdimage.ubuntu.com/ubuntu-base/releases/20.04/release/ubuntu-base-20.04.5-base-amd64.tar.gz",
             amd64.url,
         )
-        assertEquals("242cd8898b33ea806ef5f13b1076ed7c76f9f989d18384452f7166692438ff1a", amd64.sha256)
+        assertEquals("60e216b60947653dc8989be3821380268315b99b2959c29882781541bfe5a426", amd64.sha256)
+    }
+
+    @Test
+    fun `jammy variants keep their verified pins for override users`() {
+        val jammyArm64 = RootfsCatalog.variants.first {
+            it.codename == "jammy" && it.url.endsWith("arm64.tar.gz")
+        }
+        assertEquals("075d4abd2817a5023ab0a82f5cb314c5ec0aa64a9c0b40fd3154ca3bfdae979f", jammyArm64.sha256)
+        val jammyAmd64 = RootfsCatalog.variants.first {
+            it.codename == "jammy" && it.url.endsWith("amd64.tar.gz")
+        }
+        assertEquals("242cd8898b33ea806ef5f13b1076ed7c76f9f989d18384452f7166692438ff1a", jammyAmd64.sha256)
     }
 
     @Test
@@ -50,9 +66,9 @@ class RootfsCatalogTest {
     }
 
     @Test
-    fun `catalog contains jammy and noble for all three arches`() {
-        assertEquals(6, RootfsCatalog.variants.size)
-        for (codename in listOf("jammy", "noble")) {
+    fun `catalog contains focal, jammy and noble for all three arches`() {
+        assertEquals(9, RootfsCatalog.variants.size)
+        for (codename in listOf("focal", "jammy", "noble")) {
             for (arch in listOf("arm64", "armhf", "amd64")) {
                 val found = RootfsCatalog.variants.any {
                     it.codename == codename && it.url.endsWith("-base-$arch.tar.gz")
