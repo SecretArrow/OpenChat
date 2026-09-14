@@ -23,6 +23,18 @@ test -n "$APK" && test -f "$APK" || { echo "::error::APK not found for pattern: 
 adb wait-for-device
 echo "device: $(adb shell getprop ro.product.model | tr -d '\r') (API $(adb shell getprop ro.build.version.sdk | tr -d '\r'))"
 
+# --- real screen size (emulator default may be as small as 320x640) ----------
+SIZE_OUT="$(adb shell wm size | tr -d '\r' || true)"
+SCR_W="$(printf '%s' "$SIZE_OUT" | sed -n 's/.*: \([0-9][0-9]*\)x\([0-9][0-9]*\).*/\1/p' | head -1)"
+SCR_H="$(printf '%s' "$SIZE_OUT" | sed -n 's/.*: \([0-9][0-9]*\)x\([0-9][0-9]*\).*/\2/p' | head -1)"
+case "${SCR_W:-0}:${SCR_H:-0}" in
+  0:0|0:|:0) SCR_W=320; SCR_H=640 ;;   # sane fallback
+esac
+SWIPE_X=$((SCR_W / 2))
+SWIPE_Y1=$((SCR_H * 70 / 100))
+SWIPE_Y2=$((SCR_H * 25 / 100))
+echo "screen: ${SCR_W}x${SCR_H} (scroll swipe: $SWIPE_X,$SWIPE_Y1 -> $SWIPE_X,$SWIPE_Y2)"
+
 # --- auto-detect application id (aapt from the newest installed build-tools) --
 AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f 2>/dev/null | sort | tail -1)"
 test -n "$AAPT" || { echo "::error::aapt not found in ANDROID_HOME/build-tools"; exit 1; }
@@ -117,7 +129,7 @@ ui_tap() { # $1=human label; remaining args = attr value pairs tried in order
         echo " …"
       fi
     fi
-    adb shell input swipe 540 1500 540 500 250   # scroll down, retry
+    adb shell input swipe "$SWIPE_X" "$SWIPE_Y1" "$SWIPE_X" "$SWIPE_Y2" 250   # scroll down, retry
     sleep 2
     tries=$((tries + 1))
   done
