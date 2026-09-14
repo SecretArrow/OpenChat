@@ -484,6 +484,40 @@ class E2E:
                                 if re.search(r"type=1326|sig=31|code=0x", l)
                             )[-3000:]
                             probe_lines.append("dmesg seccomp-kill audit (type=1326):\n" + (kills or "(none)"))
+
+                            # 4) THE decisive capture: run a probe script from
+                            # the app's Terminal tab — that bash runs in the
+                            # app's filtered lineage under the terminal's own
+                            # proot. If the kernel filter kills guest
+                            # processes, the shell prints "Bad system call"
+                            # into our redirected file, with the real RC.
+                            try:
+                                probe_sh = (
+                                    "#!/bin/bash\n"
+                                    "{ apt-get update; echo APT_RC=$?; } > /tmp/o.txt 2>&1\n"
+                                    "{ /bin/true; echo TRUE_RC=$?; } >> /tmp/o.txt 2>&1\n"
+                                    "echo DONE >> /tmp/o.txt\n"
+                                )
+                                run_as_write = self.adb.run_as_sh(
+                                    "cat > files/ubuntu/rootfs/root/probe.sh <<'EOF'\n"
+                                    + probe_sh + "EOF\nchmod 755 files/ubuntu/rootfs/root/probe.sh\necho WROTE\n")
+                                probe_lines.append("probe.sh write: " + run_as_write.strip()[:40])
+                                # Terminal tab: tap input, type, Enter.
+                                find_tap(self.adb, ["terminal"], scroll=False)
+                                time.sleep(8)
+                                nodes = parse_ui(self.adb.dump_ui())
+                                fields = [n for n in nodes if "EditText" in n["cls"]]
+                                if fields:
+                                    self.adb.tap(fields[0]["cx"], fields[0]["cy"])
+                                    time.sleep(1)
+                                self.adb.type_text("bash /root/probe.sh")
+                                self.adb.keyevent(66)
+                                time.sleep(15)
+                                o = self.adb.run_as("cat", "files/ubuntu/rootfs/tmp/o.txt")
+                                probe_lines.append("in-app terminal probe (/tmp/o.txt):\n" + (o.strip()[:800] or "(empty — Enter may not have sent, or the terminal session itself died)"))
+                                self.adb.screenshot("06-terminal-probe")
+                            except Exception as pe:  # noqa: BLE001
+                                probe_lines.append(f"terminal probe failed: {pe}")
                             body = "\n".join(probe_lines)
                             with open(os.path.join(self.out, "logs", "apt-probe.log"), "a") as f:
                                 f.write(f"\n=== inroot apt probe {now_iso()} ===\n{body[:5000]}\n")
