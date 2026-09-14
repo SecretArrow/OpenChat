@@ -126,10 +126,12 @@ jobs:
           arch: x86_64
           script: bash scripts/emulator_smoke.sh 'apks/OpenChat-x86_64-debug.apk'
 
-      - name: Upload smoke screenshot (evidence)
+      - name: Upload smoke screenshots (evidence)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: smoke-screen-debug
-          path: smoke-screen.png
+          path: |
+            smoke-screen.png
+            smoke-shots/
           if-no-files-found: ignore

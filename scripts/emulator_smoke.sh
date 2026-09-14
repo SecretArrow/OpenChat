@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
-# Emulator smoke test (§ real runtime verification, not just unit tests):
+# Emulator smoke test — deep feature sweep (§ real runtime verification):
 #   1. install the APK on the already-booted emulator (android-emulator-runner)
 #   2. cold-launch MainActivity, wait for settle
 #   3. FAIL if the process is dead or a FATAL EXCEPTION appears in logcat
-#   4. capture a screenshot as evidence (uploaded as a workflow artifact)
+#   4. DEEP SWEEP: open every main destination (Chat, Terminal, Files) and
+#      every Settings sub-screen (Providers, Models, Ollama, Local models,
+#      OpenCode, Ubuntu userspace, Terminal settings, Workspace, Background
+#      processes, Security, Storage, About) via uiautomator-driven taps —
+#      the process is crash-checked after EVERY screen, with per-screen
+#      screenshot evidence
+#   5. capture a final screenshot (uploaded as a workflow artifact)
 # Works for BOTH debug and release APKs: the application id is auto-detected
 # with aapt (debug builds carry a .debug applicationIdSuffix).
 # $1 may be a glob (resolved with ls; first match wins).
 set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 APK="$(ls ${1:?usage: emulator_smoke.sh <apk-path-or-glob>} 2>/dev/null | head -1 || true)"
 test -n "$APK" && test -f "$APK" || { echo "::error::APK not found for pattern: ${1}"; ls -la . apks/ release/ 2>/dev/null || true; exit 1; }
@@ -33,29 +41,131 @@ echo "installing: $APK  (package: $APP_ID, activity: $MAIN_ACT)"
 
 # --- install + cold launch ----------------------------------------------------
 adb install -r "$APK"
+adb logcat -c
 adb shell am start -W -n "$COMPONENT" || { echo "::error::am start failed for $COMPONENT"; exit 1; }
 echo "launched, settling 12s…"
 sleep 12
 
-# --- process alive? -----------------------------------------------------------
-PID="$(adb shell pidof "$APP_ID" | tr -d '\r' || true)"
-echo "pid: ${PID:-<none>}"
-if [ -z "$PID" ]; then
-  echo "::error::app process is NOT alive after launch"
-  adb logcat -d | grep -A 30 -F "FATAL EXCEPTION" | head -50 || true
+# --- stabilize: kill animations so uiautomator stays deterministic ------------
+adb shell settings put global window_animation_scale 0.0 || true
+adb shell settings put global transition_animation_scale 0.0 || true
+adb shell settings put global animator_duration_scale 0.0 || true
+
+fail_with_logs() { # $1 = reason
+  echo "::error::$1"
+  adb exec-out screencap -p > smoke-screen.png 2>/dev/null || true
+  adb logcat -d | grep -A 40 -F "FATAL EXCEPTION" | head -60 || true
   adb logcat -d | grep -iE "AndroidRuntime|$APP_ID" | tail -60 || true
   exit 1
-fi
+}
 
-# --- crash check --------------------------------------------------------------
-if adb logcat -d | grep -qF "FATAL EXCEPTION"; then
-  echo "::error::FATAL EXCEPTION found in logcat"
-  adb logcat -d | grep -A 40 -F "FATAL EXCEPTION" | head -60 || true
-  exit 1
-fi
+check_alive() { # $1 = context label
+  local PID
+  PID="$(adb shell pidof "$APP_ID" | tr -d '\r' || true)"
+  if [ -z "$PID" ]; then
+    fail_with_logs "app process is NOT alive after: $1"
+  fi
+  echo "  alive (pid $PID): $1"
+}
 
-# --- UI focus sanity + screenshot evidence ------------------------------------
-adb shell dumpsys window 2>/dev/null | grep -i mCurrentFocus || true
+check_no_fatal() {
+  if adb logcat -d | grep -qF "FATAL EXCEPTION"; then
+    fail_with_logs "FATAL EXCEPTION found in logcat"
+  fi
+}
+
+# --- uiautomator helpers ------------------------------------------------------
+ui_dump() {
+  adb shell uiautomator dump >/dev/null 2>&1 || true
+}
+
+# print "cx cy" of the first node matching attr=value, empty when absent
+ui_center() { # $1=attr(text|content-desc) $2=value
+  adb shell cat /sdcard/window_dump.xml 2>/dev/null | tr -d '\r' \
+    | python3 "$ROOT/scripts/emu_ui.py" "$1" "$2" || true
+}
+
+ui_tap() { # $1=attr $2=value $3=human label
+  local c="" tries=0
+  while [ "$tries" -lt 10 ]; do
+    ui_dump
+    c="$(ui_center "$1" "$2")"
+    if [ -n "$c" ]; then
+      # shellcheck disable=SC2086
+      adb shell input tap $c
+      echo "  tapped [$3] at ($c)"
+      return 0
+    fi
+    adb shell input swipe 540 1500 540 500 250   # scroll down, retry
+    sleep 1
+    tries=$((tries + 1))
+  done
+  fail_with_logs "UI element not found after scroll retries: $1=$2 ($3)"
+}
+
+shot() { # $1 = slug
+  mkdir -p smoke-shots
+  adb exec-out screencap -p > "smoke-shots/$1.png" 2>/dev/null || true
+}
+
+# Visit a Settings sub-screen by its exact row label and return to Settings.
+visit_subscreen() { # $1 = row label, $2 = slug
+  adb shell input keyevent 4          # ensure we are at Settings root
+  sleep 1
+  ui_tap content-desc Settings "bottom-nav Settings"
+  sleep 1
+  ui_tap text "$1" "settings row: $1"
+  sleep 2.5
+  check_alive "screen: $1"
+  check_no_fatal
+  shot "$2"
+  adb shell input keyevent 4          # back to Settings
+  sleep 1
+}
+
+# --- cold launch checks -------------------------------------------------------
+check_alive "cold launch"
+check_no_fatal
+shot "01-chat-cold"
+
+# --- main destinations via bottom navigation ----------------------------------
+ui_tap content-desc Terminal "bottom-nav Terminal"
+sleep 2.5
+check_alive "screen: Terminal"
+check_no_fatal
+shot "02-terminal"
+
+ui_tap content-desc Files "bottom-nav Files"
+sleep 2.5
+check_alive "screen: Files"
+check_no_fatal
+shot "03-files"
+
+ui_tap content-desc Settings "bottom-nav Settings"
+sleep 2
+check_alive "screen: Settings"
+check_no_fatal
+shot "04-settings"
+
+# --- every Settings sub-screen (in list order; scroll handled by ui_tap) ------
+visit_subscreen "Providers"                 "05-providers"
+visit_subscreen "Models"                    "06-models"
+visit_subscreen "Ollama"                    "07-ollama"
+visit_subscreen "Local models (on-device)"  "08-local-models"
+visit_subscreen "OpenCode"                  "09-opencode"
+visit_subscreen "Ubuntu userspace"          "10-ubuntu"
+visit_subscreen "Terminal"                  "11-terminal-settings"
+visit_subscreen "Workspace"                 "12-workspace"
+visit_subscreen "Background processes"      "13-processes"
+visit_subscreen "Security"                  "14-security"
+visit_subscreen "Storage"                   "15-storage"
+visit_subscreen "About"                     "16-about"
+
+# --- back to start destination, final evidence --------------------------------
+ui_tap content-desc Chat "bottom-nav Chat"
+sleep 2
+check_alive "screen: Chat (final)"
+check_no_fatal
 adb exec-out screencap -p > smoke-screen.png
-ls -l smoke-screen.png
-echo "SMOKE OK: $APP_ID alive (pid $PID), no FATAL EXCEPTION"
+ls -l smoke-screen.png smoke-shots/ | head -25
+echo "SMOKE OK: $APP_ID survived the full feature sweep (16 screens), no FATAL EXCEPTION"
