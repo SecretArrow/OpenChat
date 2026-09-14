@@ -46,6 +46,7 @@ import com.openchat.android.ui.components.StatusPill
 import com.openchat.android.ui.components.formatDate
 import com.openchat.android.ui.nav.Routes
 import kotlinx.coroutines.launch
+import androidx.compose.ui.Alignment
 
 /**
  * Ubuntu userspace management (spec §3–4): full install chain with progress,
