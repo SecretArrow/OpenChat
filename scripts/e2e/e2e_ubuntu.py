@@ -444,6 +444,15 @@ class E2E:
                 full = (st.get("message") or "")
                 with open(os.path.join(self.out, "logs", "e2e-run.log"), "a") as f:
                     f.write(f"\n=== app ERROR state {now_iso()} ===\n{full[:2000]}\n")
+                # Grab the seccomp-kill audit IMMEDIATELY — the dmesg ring
+                # overflows with avc noise within minutes.
+                dmesg_now = self.adb.shell("dmesg")
+                kills_now = "\n".join(
+                    l for l in dmesg_now.split("\n")
+                    if re.search(r"type=1326|sig=31|seccomp", l, re.I)
+                )[-2000:]
+                with open(os.path.join(self.out, "logs", "seccomp-kills.log"), "a") as f:
+                    f.write(f"\n=== dmesg @ ERROR {now_iso()} ===\n{kills_now or '(none)'}\n")
                 if self.recoveries < 3:
                     log(f"recoverable ERROR ({self.recoveries + 1}/3): {full[:200]} — retrying Install")
                     self.recoveries += 1
@@ -602,8 +611,16 @@ class E2E:
             self.fail("ENVIRONMENT", "emulator not fully booted (sys.boot_completed != 1)")
         self.adb.wake()
         self.adb.shell("svc", "power", "stayon", "true")
+        # Maximize seccomp kill auditing early (google_apis emulators allow adb
+        # root): without this, SECCOMP_RET_KILL_THREAD deaths may never appear
+        # in dmesg and the blocked syscall stays anonymous.
+        run(self.adb.base + ["root"], timeout=60)
+        time.sleep(3)
+        self.adb.shell("echo 'kill kill_process trap errno log' > /proc/sys/kernel/seccomp/actions_logged")
+        logged = self.adb.shell("cat /proc/sys/kernel/seccomp/actions_logged")
         w, h = self.adb.screen_size()
-        self.stages["ENVIRONMENT"].pass_(f"device booted, screen {w}x{h}")
+        self.stages["ENVIRONMENT"].pass_(
+            f"device booted, screen {w}x{h}, seccomp actions_logged: {logged.strip() or '(default)'}")
 
     def phase_install_apk(self) -> None:
         aapt = find_aapt()
