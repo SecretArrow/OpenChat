@@ -170,14 +170,15 @@ class Adb:
     def inroot(self, script: str, timeout: int = 180) -> str:
         """Execute a shell script INSIDE the app's real Ubuntu rootfs via the
         same proot binary + environment the app uses (run-as on the debug
-        build) — real execution, not a mock."""
+        build) — real execution, not a mock. stderr is merged (proot prints
+        its failures there; dropping it made failures look 'silent')."""
         host = tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False)
         host.write(script)
         host.close()
         dev = "/data/local/tmp/e2e-inroot.sh"
         run(self.base + ["push", host.name, dev], timeout=60)
         self.shell("chmod", "644", dev)
-        out = self.shell(f"run-as {self.package} sh < {dev}", timeout=timeout)
+        out = self.shell(f"run-as {self.package} sh < {dev} 2>&1", timeout=timeout)
         os.unlink(host.name)
         return out
 
@@ -452,15 +453,21 @@ class E2E:
                     if self.recoveries == 2:
                         try:
                             probe_lines = []
-                            for name, cmd in [
-                                ("uname", "uname -m"),
-                                ("apt-version", "apt --version"),
-                                ("apt-get-update", "apt-get update"),
-                            ]:
-                                out = self.inroot_cmd(f"{cmd} >/dev/null 2>&1 && echo PROBE_OK || echo PROBE_FAIL", timeout=150)
-                                probe_lines.append(f"{name}: {out.strip()[-40:]}")
-                                detail = self.inroot_cmd(cmd, timeout=150)
-                                probe_lines.append(f"{name}-output: {detail.strip()[:300]}")
+                            P = f"/data/data/{self.adb.package}/files"
+                            # Exec ladder: isolate exactly WHERE proot dies —
+                            # /bin/true (static-ish tiny exec), echo (dynamic),
+                            # bash --version (dynamic, no threads), apt (threads).
+                            ladder = (
+                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs /bin/true; echo LADDER_true=$?\n"
+                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs /bin/echo hello; echo LADDER_echo=$?\n"
+                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs /bin/bash --version 2>&1 | head -1; echo LADDER_bash=$?\n"
+                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs /bin/bash -c 'apt --version' 2>&1 | head -2; echo LADDER_apt=$?\n"
+                                f"{P}/ubuntu/bin/proot --version 2>&1 | head -1; echo LADDER_prootversion=$?\n"
+                            )
+                            probe_lines.append("ladder (raw run-as sh, stderr merged):\n" + self.adb.run_as_sh(ladder)[:1200])
+                            raw = self.inroot_raw(
+                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs /bin/bash -c 'uname -m; apt-get update' 2>&1 | tail -5")
+                            probe_lines.append("inroot uname+aptget (stderr merged):\n" + raw[:1200])
                             # Kernel-side truth: seccomp kills log the blocked
                             # syscall number in dmesg. google_apis emulators
                             # allow `adb root` — best effort, never fatal.
@@ -469,13 +476,13 @@ class E2E:
                             dmesg = self.adb.shell("dmesg")
                             seccomp = "\n".join(
                                 l for l in dmesg.split("\n")
-                                if re.search(r"seccomp|ptrace|SIGSYS|avc.*denied", l, re.I)
+                                if re.search(r"seccomp|SIGSYS|openchat|proot", l, re.I)
                             )[-3000:]
-                            probe_lines.append("dmesg seccomp/avc tail:\n" + (seccomp or "(no matches — dmesg unreadable or empty)"))
+                            probe_lines.append("dmesg seccomp/openchat tail:\n" + (seccomp or "(no matches — dmesg unreadable or empty)"))
                             body = "\n".join(probe_lines)
                             with open(os.path.join(self.out, "logs", "apt-probe.log"), "a") as f:
-                                f.write(f"\n=== inroot apt probe {now_iso()} ===\n{body[:4000]}\n")
-                            log(f"apt probe: {body[:400]}")
+                                f.write(f"\n=== inroot apt probe {now_iso()} ===\n{body[:5000]}\n")
+                            log(f"apt probe: {body[:500]}")
                         except Exception as e:  # noqa: BLE001 — probe must never kill the flow
                             log(f"apt probe failed: {e}")
                     nav_settings(self.adb)
@@ -664,8 +671,31 @@ class E2E:
             f"exec {files}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {files}/ubuntu/rootfs /bin/bash -c\n"
         )
 
+    def inroot_raw(self, body: str, timeout: int = 180) -> str:
+        """Run a multi-line in-rootfs script: proot WITHOUT exec (so the outer
+        sh can report the real exit code) + stderr merged."""
+        pkg = self.adb.package
+        files = f"/data/data/{pkg}/files"
+        script = (
+            f"export HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/node/bin "
+            f"TERM=xterm-256color LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive TMPDIR=/tmp PROOT_NO_SECCOMP=1\n"
+            f"export PROOT_TMP_DIR={files}/ubuntu/tmp\n"
+            f"{body}\n"
+            f"echo INROOT_RC=$?\n"
+        )
+        return self.adb.inroot(script, timeout=timeout)
+
     def inroot_cmd(self, cmd: str, timeout: int = 180) -> str:
-        return self.adb.inroot(self.inroot_env() + f" \"{cmd}\"", timeout=timeout)
+        pkg = self.adb.package
+        files = f"/data/data/{pkg}/files"
+        script = (
+            f"export HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/node/bin "
+            f"TERM=xterm-256color LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive TMPDIR=/tmp PROOT_NO_SECCOMP=1\n"
+            f"export PROOT_TMP_DIR={files}/ubuntu/tmp\n"
+            f"exec {files}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {files}/ubuntu/rootfs /bin/bash -c\n"
+            f"\"{cmd}\"\n"
+        )
+        return self.adb.inroot(script, timeout=timeout)
 
     def phase_ubuntu(self) -> None:
         # UBUNTU_BOOT + SHELL — real execution inside the rootfs
