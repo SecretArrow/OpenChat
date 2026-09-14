@@ -170,7 +170,7 @@ ensure_settings_root() {
     close_keyboard
     ui_dump
     XML="$(adb shell cat /sdcard/window_dump.xml 2>/dev/null | tr -d '\r' || true)"
-    if printf '%s' "$XML" | grep -Eq 'text="(Re)?install"'; then
+    if printf '%s' "$XML" | grep -Eqi 'text="(Re)?install"'; then
       return 0
     fi
     echo "  [nav] not on Settings root (attempt $tries) — tapping bottom-nav Settings"
