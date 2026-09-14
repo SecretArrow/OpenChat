@@ -8,6 +8,7 @@ import com.openchat.android.ai.providers.ChatClients
 import com.openchat.android.ai.providers.ChatRequest
 import com.openchat.android.ai.providers.ProviderException
 import com.openchat.android.core.model.AIModel
+import com.openchat.android.core.model.Attachment
 import com.openchat.android.core.model.ChatBackend
 import com.openchat.android.core.model.ChatMessage
 import com.openchat.android.core.model.Conversation
@@ -136,6 +137,16 @@ class ChatService(
         conversationById(conversationId)?.let { persistConversation(it) }
     }
 
+    /** Toggles the per-conversation Agent web-search switch. */
+    fun setWebSearch(conversationId: String, enabled: Boolean) {
+        conversationsState.update { list ->
+            list.map {
+                if (it.id == conversationId) it.copy(webSearch = enabled, updatedAt = System.currentTimeMillis()) else it
+            }
+        }
+        conversationById(conversationId)?.let { persistConversation(it) }
+    }
+
     /** Appends a tool block to the last assistant message (or creates one). */
     fun appendToolBlock(conversationId: String, block: ToolBlock) {
         val conv = conversationById(conversationId) ?: return
@@ -161,14 +172,14 @@ class ChatService(
     // ------------------------------------------------------------------ sending
 
     /**
-     * Appends the user message and streams the assistant reply into the active
-     * conversation. Cancellation (via [cancel] or caller scope) keeps partial
-     * content and never marks an error.
+     * Appends the user message (with its attachments) and streams the
+     * assistant reply into the active conversation. Cancellation (via [cancel]
+     * or caller scope) keeps partial content and never marks an error.
      */
-    suspend fun send(text: String) {
-        if (text.isBlank() || streamingState.value) return
+    suspend fun send(text: String, attachments: List<Attachment> = emptyList()) {
+        if ((text.isBlank() && attachments.isEmpty()) || streamingState.value) return
         val conv = activeConversation() ?: newConversation()
-        startExchange(conv.id, text, addUserMessage = true)
+        startExchange(conv.id, text, addUserMessage = true, attachments = attachments)
     }
 
     /** Cancels the running streaming job; partial content is kept. */
@@ -184,10 +195,15 @@ class ChatService(
 
     // ------------------------------------------------------------------ internals
 
-    private suspend fun startExchange(conversationId: String, text: String, addUserMessage: Boolean) {
+    private suspend fun startExchange(
+        conversationId: String,
+        text: String,
+        addUserMessage: Boolean,
+        attachments: List<Attachment> = emptyList(),
+    ) {
         if (streamingState.value) return
         streamingState.value = true
-        val j = scope.launch { exchange(conversationId, text, addUserMessage) }
+        val j = scope.launch { exchange(conversationId, text, addUserMessage, attachments) }
         job = j
         try {
             j.join()
@@ -197,13 +213,23 @@ class ChatService(
         }
     }
 
-    private suspend fun exchange(conversationId: String, text: String, addUserMessage: Boolean) {
+    private suspend fun exchange(
+        conversationId: String,
+        text: String,
+        addUserMessage: Boolean,
+        attachments: List<Attachment> = emptyList(),
+    ) {
         var conv = conversationById(conversationId) ?: return
         try {
             if (addUserMessage) {
                 conv = appendMessage(
                     conv,
-                    ChatMessage(id = UUID.randomUUID().toString(), role = Role.USER, content = text),
+                    ChatMessage(
+                        id = UUID.randomUUID().toString(),
+                        role = Role.USER,
+                        content = Attachments.composeUserContent(text, attachments),
+                        attachments = attachments,
+                    ),
                 )
             }
             // On-device models are routed by their reserved "local:" id prefix —
@@ -228,16 +254,61 @@ class ChatService(
                 modelId = model.id,
             )
             conv = appendMessage(conv, assistant)
+            // Agent web search: query BEFORE the model call, attach the
+            // results as a tool block (visible sources) and inject the context
+            // into the outgoing prompt. A search failure degrades gracefully —
+            // the chat proceeds without web context.
+            var webContext: String? = null
+            if (conv.webSearch && localSpec == null && conv.backend == ChatBackend.DIRECT && text.isNotBlank()) {
+                val search = runWebSearch(conv.id, text)
+                webContext = search.second
+            }
             when {
                 localSpec != null && local != null -> runLocal(conv, assistant.id, localSpec, model)
                 conv.backend == ChatBackend.OPENCODE -> runOpencode(conv, assistant.id, text, model)
-                else -> runDirect(conv, assistant.id, model)
+                else -> runDirect(conv, assistant.id, model, webContext)
             }
         } finally {
             streamingState.value = false
             conversationById(conversationId)?.let { persistConversation(it) }
             persistIndex()
         }
+    }
+
+    /**
+     * Runs the web search for [query], appends its tool block (with sources)
+     * to the newest assistant message and returns the prompt context block
+     * (null when the search failed — the failure itself stays visible in the
+     * tool block output).
+     */
+    private suspend fun runWebSearch(conversationId: String, query: String): Pair<ToolBlock, String?> {
+        val result = WebSearch.search(query)
+        val block = result.fold(
+            onSuccess = { hits ->
+                ToolBlock(
+                    id = UUID.randomUUID().toString(),
+                    label = "Web search",
+                    command = query,
+                    output = if (hits.isEmpty()) {
+                        "(no results)"
+                    } else {
+                        hits.mapIndexed { i, h -> "${i + 1}. ${h.title}\n   ${h.url}" }.joinToString("\n")
+                    },
+                    sources = WebSearch.hitsToSources(hits),
+                )
+            },
+            onFailure = { t ->
+                ToolBlock(
+                    id = UUID.randomUUID().toString(),
+                    label = "Web search",
+                    command = query,
+                    output = "(search failed — answering without web context: ${t.message ?: t.javaClass.simpleName})",
+                )
+            },
+        )
+        appendToolBlock(conversationId, block)
+        val context = result.getOrNull()?.let { WebSearch.contextBlock(query, it) }
+        return block to context
     }
 
     /** LOCAL backend: on-device GGUF inference via [LocalInferenceEngine]. */
@@ -298,7 +369,12 @@ class ChatService(
     }
 
     /** DIRECT backend: stream deltas from the provider transport into the message. */
-    private suspend fun runDirect(conv: Conversation, assistantId: String, model: AIModel) {
+    private suspend fun runDirect(
+        conv: Conversation,
+        assistantId: String,
+        model: AIModel,
+        webContext: String? = null,
+    ) {
         val provider = providers.providers.value.firstOrNull { it.id == model.providerId }
         if (provider == null) {
             failWith(conv, providerMissingError(model), assistantId)
@@ -309,11 +385,21 @@ class ChatService(
             failWith(conv, Errors.providerAuth(provider.name), assistantId)
             return
         }
+        // Inject the web-search context into the LAST user message of the
+        // outgoing request only — the stored message keeps its clean text.
+        val history = conv.messages.filter { it.content.isNotBlank() }
+        val messages = if (webContext != null) {
+            history.mapIndexed { i, m ->
+                if (i == history.lastIndex && m.role == Role.USER) m.copy(content = m.content + "\n\n" + webContext) else m
+            }
+        } else {
+            history
+        }
         val request = ChatRequest(
             model = model,
             provider = provider,
             apiKey = apiKey,
-            messages = conv.messages.filter { it.content.isNotBlank() },
+            messages = messages,
             maxTokens = model.maxTokens,
             temperature = model.temperature,
         )

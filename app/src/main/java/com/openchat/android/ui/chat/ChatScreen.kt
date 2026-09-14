@@ -1,6 +1,11 @@
 package com.openchat.android.ui.chat
 
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -21,6 +26,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
@@ -42,7 +48,9 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -54,6 +62,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.PaddingValues
 import com.openchat.android.AppGraph
 import com.openchat.android.ai.local.LocalEngineState
+import com.openchat.android.core.model.Attachment
+import com.openchat.android.core.model.AttachmentKind
 import com.openchat.android.core.model.ChatBackend
 import com.openchat.android.core.model.ChatMessage
 import com.openchat.android.core.model.Role
@@ -64,12 +74,20 @@ import com.openchat.android.ui.components.ErrorCard
 import com.openchat.android.ui.components.MarkdownText
 import com.openchat.android.ui.components.ModelPicker
 import com.openchat.android.ui.components.StatusPill
+import com.openchat.android.ui.components.humanizeBytes
 import kotlinx.coroutines.launch
 
 /**
- * Chat tab (spec §5): conversation drawer, model picker, backend toggle,
- * message list with markdown + tool blocks, streaming state, input row,
- * error surface with retry. Model switching never clears messages.
+ * Chat tab (spec §5) — Agent-first:
+ *  - streaming auto-scrolls ONLY while the user sits at the bottom; scrolling
+ *    up pauses it instantly, returning to the bottom (or tapping
+ *    "Scroll to latest") resumes it — the list never fights the user;
+ *  - every assistant reply carries a "By <model> [Copy]" footer (copy takes
+ *    the reply body only, right-aligned on the same row);
+ *  - the composer is [+ attach] [Web] [message] [Send]: attachments
+ *    (text/code inlined, images sent as vision input, binaries named) and a
+ *    per-conversation web-search switch whose sources render as tappable
+ *    chips under the reply.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -85,6 +103,34 @@ fun ChatScreen(onOpenTerminal: (() -> Unit)? = null) {
     val conv = conversations.firstOrNull { it.id == activeId }
     val messages: List<ChatMessage> = conv?.messages ?: emptyList()
     var input by remember { mutableStateOf("") }
+    val pendingAttachments = remember { mutableStateListOf<Attachment>() }
+
+    fun toast(msg: String) {
+        android.widget.Toast.makeText(AppGraph.appContext, msg, android.widget.Toast.LENGTH_LONG).show()
+    }
+
+    // Attachment picking: images (vision), text/code (inlined), other docs
+    // (named). Every unreadable file degrades to a toast — never a crash.
+    val attachLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            scope.launch {
+                uris.forEach { uri ->
+                    com.openchat.android.ai.AttachmentFiles.fromUri(AppGraph.appContext, uri).fold(
+                        { att ->
+                            if (pendingAttachments.size < 6) {
+                                pendingAttachments.add(att)
+                            } else {
+                                toast("Up to 6 attachments per message")
+                            }
+                        },
+                        { t -> toast(t.message ?: "Could not attach the file") },
+                    )
+                }
+            }
+        }
+    }
 
     // Plain-language starter prompts (z.ai-style guidance for non-CLI users).
     val suggestions = listOf(
@@ -109,9 +155,30 @@ fun ChatScreen(onOpenTerminal: (() -> Unit)? = null) {
     }
 
     val listState = rememberLazyListState()
-    LaunchedEffect(messages.size, streaming) {
-        if (messages.isNotEmpty()) {
+
+    // ---- Auto-scroll that never fights the user -----------------------------
+    // atBottom is derived from the layout info: the user is "at the bottom"
+    // while the last (or streaming) item is visible. Any scroll up flips it
+    // off; scrolling back (or the button) flips it on and streaming resumes.
+    val atBottom by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf true
+            last.index >= info.totalItemsCount - 2
+        }
+    }
+    val lastContentLength = messages.lastOrNull()?.content?.length ?: 0
+
+    // New message appeared → smooth scroll (only when the user allows it).
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty() && atBottom) {
             listState.animateScrollToItem(messages.size - 1)
+        }
+    }
+    // Streaming delta → instant re-pin (no animation spam while typing).
+    LaunchedEffect(lastContentLength, streaming) {
+        if (streaming && messages.isNotEmpty() && atBottom) {
+            listState.scrollToItem(messages.size - 1)
         }
     }
 
@@ -210,140 +277,215 @@ fun ChatScreen(onOpenTerminal: (() -> Unit)? = null) {
                 )
             },
         ) { pad ->
-            Column(
+            Box(
                 Modifier
                     .padding(pad)
                     .fillMaxSize(),
             ) {
-                if (conv?.backend == ChatBackend.OPENCODE) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "Agent mode — the AI runs commands inside the Ubuntu workspace. " +
-                                "Executed steps appear below as tool cards.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.weight(1f),
-                        )
-                        if (onOpenTerminal != null) {
-                            TextButton(onClick = onOpenTerminal) { Text("Terminal") }
+                Column(Modifier.fillMaxSize()) {
+                    if (conv?.backend == ChatBackend.OPENCODE) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "Agent mode — the AI runs commands inside the Ubuntu workspace. " +
+                                    "Executed steps appear below as tool cards.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (onOpenTerminal != null) {
+                                TextButton(onClick = onOpenTerminal) { Text("Terminal") }
+                            }
                         }
                     }
-                }
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentPadding = PaddingValues(
-                        horizontal = 12.dp, vertical = 8.dp,
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    if (messages.isEmpty()) {
-                        item(key = "empty") {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 48.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                            ) {
-                                Text("Start coding with AI\u2026", style = MaterialTheme.typography.titleMedium)
-                                Spacer(Modifier.size(6.dp))
-                                Text(
-                                    "Pick a model above, then send your first prompt. " +
-                                        "Switch to Agent mode to let the AI run commands " +
-                                        "inside the Ubuntu workspace for you.",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.outline,
-                                )
-                                Spacer(Modifier.size(10.dp))
-                                FlowRow(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    modifier = Modifier.padding(horizontal = 12.dp),
-                                ) {
-                                    suggestions.forEach { s ->
-                                        SuggestionChip(
-                                            onClick = { input = s },
-                                            label = { Text(s, style = MaterialTheme.typography.bodySmall) },
+                    Box(Modifier.weight(1f)) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(
+                                horizontal = 12.dp, vertical = 8.dp,
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            if (messages.isEmpty()) {
+                                item(key = "empty") {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 48.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                    ) {
+                                        Text("Start coding with AI\u2026", style = MaterialTheme.typography.titleMedium)
+                                        Spacer(Modifier.size(6.dp))
+                                        Text(
+                                            "Pick a model above, then send your first prompt. " +
+                                                "Switch to Agent mode to let the AI run commands " +
+                                                "inside the Ubuntu workspace for you.",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.outline,
                                         )
+                                        Spacer(Modifier.size(10.dp))
+                                        FlowRow(
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            modifier = Modifier.padding(horizontal = 12.dp),
+                                        ) {
+                                            suggestions.forEach { s ->
+                                                SuggestionChip(
+                                                    onClick = { input = s },
+                                                    label = { Text(s, style = MaterialTheme.typography.bodySmall) },
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            items(messages, key = { it.id }) { msg ->
+                                MessageRow(msg)
+                            }
+                            if (streaming) {
+                                item(key = "streaming") {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.dp,
+                                        )
+                                        val agentMode = conv?.backend == ChatBackend.OPENCODE
+                                        val steps =
+                                            messages.lastOrNull { it.role == Role.ASSISTANT }?.toolBlocks?.size ?: 0
+                                        Text(
+                                            when {
+                                                localState is LocalEngineState.Loading ->
+                                                    "Loading local model… (first load can take a while)"
+                                                agentMode -> "Agent working… ($steps step${if (steps == 1) "" else "s"} so far)"
+                                                else -> "Generating…"
+                                            },
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                        Spacer(Modifier.weight(1f))
+                                        TextButton(onClick = { AppGraph.chat.cancel() }) { Text("Cancel") }
                                     }
                                 }
                             }
                         }
-                    }
-                    items(messages, key = { it.id }) { msg ->
-                        MessageRow(msg)
-                    }
-                    if (streaming) {
-                        item(key = "streaming") {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.fillMaxWidth(),
+
+                        // "Scroll to latest" — appears only when the user has
+                        // scrolled away from the live bottom.
+                        if (!atBottom && messages.isNotEmpty()) {
+                            androidx.compose.material3.SmallFloatingActionButton(
+                                onClick = {
+                                    scope.launch {
+                                        listState.animateScrollToItem(messages.size - 1)
+                                    }
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(12.dp),
                             ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp,
-                                )
-                                val agentMode = conv?.backend == ChatBackend.OPENCODE
-                                val steps =
-                                    messages.lastOrNull { it.role == Role.ASSISTANT }?.toolBlocks?.size ?: 0
-                                Text(
-                                    when {
-                                        localState is LocalEngineState.Loading ->
-                                            "Loading local model… (first load can take a while)"
-                                        agentMode -> "Agent working… ($steps step${if (steps == 1) "" else "s"} so far)"
-                                        else -> "Generating…"
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                Spacer(Modifier.weight(1f))
-                                TextButton(onClick = { AppGraph.chat.cancel() }) { Text("Cancel") }
+                                Text("↓ Latest", style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     }
-                }
 
-                ErrorCard(
-                    info = lastError,
-                    onRetry = { scope.launch { AppGraph.chat.retry() } },
-                )
-
-                if (!streaming && messages.any { it.role == Role.ASSISTANT }) {
-                    TextButton(
-                        onClick = { scope.launch { AppGraph.chat.regenerate() } },
-                        modifier = Modifier.padding(start = 8.dp),
-                    ) { Text("Regenerate") }
-                }
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.Bottom,
-                ) {
-                    OutlinedTextField(
-                        value = input,
-                        onValueChange = { input = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Message…") },
-                        maxLines = 5,
-                        enabled = !streaming,
+                    ErrorCard(
+                        info = lastError,
+                        onRetry = { scope.launch { AppGraph.chat.retry() } },
                     )
-                    TextButton(
-                        onClick = {
-                            val text = input
-                            input = ""
-                            scope.launch { AppGraph.chat.send(text) }
-                        },
-                        enabled = !streaming && input.isNotBlank() && conv != null,
-                        modifier = Modifier.padding(start = 4.dp),
-                    ) { Text("Send") }
+
+                    if (!streaming && messages.any { it.role == Role.ASSISTANT }) {
+                        TextButton(
+                            onClick = { scope.launch { AppGraph.chat.regenerate() } },
+                            modifier = Modifier.padding(start = 8.dp),
+                        ) { Text("Regenerate") }
+                    }
+
+                    if (pendingAttachments.isNotEmpty()) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 2.dp),
+                        ) {
+                            pendingAttachments.forEach { att ->
+                                SuggestionChip(
+                                    onClick = { pendingAttachments.remove(att) },
+                                    label = {
+                                        Text(
+                                            "${att.name} · ${humanizeBytes(att.sizeBytes)}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    },
+                                )
+                            }
+                            SuggestionChip(
+                                onClick = { pendingAttachments.clear() },
+                                label = { Text("Clear all", style = MaterialTheme.typography.bodySmall) },
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.Bottom,
+                    ) {
+                        IconButton(
+                            onClick = {
+                                attachLauncher.launch(
+                                    arrayOf(
+                                        "image/*",
+                                        "text/*",
+                                        "application/json",
+                                        "application/xml",
+                                        "application/pdf",
+                                        "application/zip",
+                                        "application/octet-stream",
+                                    ),
+                                )
+                            },
+                            enabled = !streaming,
+                        ) {
+                            Icon(AppIcons.Add, contentDescription = "Attach files")
+                        }
+                        FilterChip(
+                            selected = conv?.webSearch == true,
+                            onClick = {
+                                conv?.let { AppGraph.chat.setWebSearch(it.id, !(it.webSearch)) }
+                            },
+                            label = { Text("Web") },
+                            enabled = !streaming,
+                            modifier = Modifier.padding(end = 4.dp),
+                        )
+                        OutlinedTextField(
+                            value = input,
+                            onValueChange = { input = it },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text("Message…") },
+                            maxLines = 5,
+                            enabled = !streaming,
+                        )
+                        TextButton(
+                            onClick = {
+                                val text = input
+                                input = ""
+                                val atts = pendingAttachments.toList()
+                                pendingAttachments.clear()
+                                scope.launch { AppGraph.chat.send(text, atts) }
+                            },
+                            enabled = !streaming &&
+                                (input.isNotBlank() || pendingAttachments.isNotEmpty()) &&
+                                conv != null,
+                            modifier = Modifier.padding(start = 4.dp),
+                        ) { Text("Send") }
+                    }
                 }
             }
         }
@@ -355,9 +497,9 @@ fun ChatScreen(onOpenTerminal: (() -> Unit)? = null) {
 private fun MessageRow(msg: ChatMessage) {
     val models by AppGraph.models.models.collectAsState()
     if (msg.role == Role.USER) {
-        Row(
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
+            horizontalAlignment = Alignment.End,
         ) {
             Surface(
                 color = MaterialTheme.colorScheme.primaryContainer,
@@ -369,6 +511,28 @@ private fun MessageRow(msg: ChatMessage) {
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(10.dp),
                 )
+            }
+            if (msg.attachments.isNotEmpty()) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.padding(top = 4.dp),
+                ) {
+                    msg.attachments.forEach { att ->
+                        AssistChip(
+                            onClick = { },
+                            label = {
+                                Text(
+                                    when (att.kind) {
+                                        AttachmentKind.IMAGE -> "🖼 ${att.name}"
+                                        AttachmentKind.TEXT -> "📄 ${att.name}"
+                                        AttachmentKind.BINARY -> "📦 ${att.name}"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            },
+                        )
+                    }
+                }
             }
         }
     } else {
@@ -390,15 +554,25 @@ private fun MessageRow(msg: ChatMessage) {
                     msg.toolBlocks.forEach { block -> ToolBlockCard(block) }
                 }
             }
-            msg.modelId?.let { modelId ->
-                val name = models.firstOrNull { it.id == modelId }?.displayName
-                if (name != null) {
+            // Footer: "By <model>" on the left, [Copy] right-aligned on the
+            // same row — copies the reply BODY only, never metadata.
+            if (msg.error == null && msg.content.isNotBlank()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 8.dp, top = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val name = msg.modelId?.let { id ->
+                        models.firstOrNull { it.id == id }?.displayName
+                    }
                     Text(
-                        "by $name",
+                        name?.let { "By $it" } ?: "",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.padding(start = 8.dp, top = 2.dp),
+                        modifier = Modifier.weight(1f),
                     )
+                    CopyIconButton(msg.content)
                 }
             }
         }
@@ -449,6 +623,36 @@ private fun ToolBlockCard(block: ToolBlock) {
                     )
                 }
             }
+            // Web-search sources: tappable chips that open in the browser.
+            if (block.sources.isNotEmpty()) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(top = 4.dp),
+                ) {
+                    block.sources.forEach { url ->
+                        AssistChip(
+                            onClick = { openUrl(url) },
+                            label = {
+                                Text(
+                                    hostOf(url),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1,
+                                )
+                            },
+                        )
+                    }
+                }
+            }
         }
     }
 }
+
+private fun openUrl(url: String) {
+    runCatching {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        AppGraph.appContext.startActivity(intent)
+    }
+}
+
+private fun hostOf(url: String): String =
+    runCatching { Uri.parse(url).host ?: url }.getOrDefault(url).removePrefix("www.")

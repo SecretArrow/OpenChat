@@ -34,10 +34,35 @@ object OpenAICompatClient : ChatClient {
                 put("model", req.model.modelName)
                 put("messages", JSONArray().apply {
                     req.messages.forEach { m ->
+                        val images = com.openchat.android.ai.AttachmentFiles.imagesOf(m.attachments)
+                        val content: Any = if (images.isEmpty()) {
+                            m.content
+                        } else {
+                            // OpenAI vision shape: content becomes an array of
+                            // text + image_url parts (data URLs).
+                            JSONArray().apply {
+                                if (m.content.isNotBlank()) {
+                                    put(JSONObject().put("type", "text").put("text", m.content))
+                                }
+                                images.forEach { img ->
+                                    val b64 = com.openchat.android.ai.AttachmentFiles.imageBase64(img)
+                                    if (b64 != null) {
+                                        put(
+                                            JSONObject()
+                                                .put("type", "image_url")
+                                                .put(
+                                                    "image_url",
+                                                    JSONObject().put("url", "data:${img.mime};base64,$b64"),
+                                                ),
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         put(
                             JSONObject()
                                 .put("role", wireRole(m.role))
-                                .put("content", m.content)
+                                .put("content", content)
                         )
                     }
                 })

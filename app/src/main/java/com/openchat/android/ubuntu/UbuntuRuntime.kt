@@ -79,6 +79,15 @@ class UbuntuRuntime(
     val log: StateFlow<List<String>> = _log
 
     /**
+     * Output tail (last lines) of the command that most recently failed —
+     * surfaced by the Ubuntu error card so the REAL reason is visible without
+     * digging through the log (users reported a bare "exit 255" with the
+     * actual cause hidden).
+     */
+    private val _failureTail = MutableStateFlow<List<String>>(emptyList())
+    val failureTail: StateFlow<List<String>> = _failureTail
+
+    /**
      * Optional post-install continuation (OpenCode install), wired by AppGraph.
      * A hook failure keeps Ubuntu READY — it must never corrupt the runtime state.
      */
@@ -280,8 +289,7 @@ class UbuntuRuntime(
 
         // ---- INSTALLING_PACKAGES (real apt run, streamed to the log) ----
         setState(UbuntuState.INSTALLING_PACKAGES, "Installing base packages (apt)…", 80)
-        runChecked("apt-get update")
-            .getOrElse { return failStep("apt-get update failed", it) }
+        runAptUpdate().getOrElse { return failStep("apt-get update failed", it) }
         runChecked(
             "DEBIAN_FRONTEND=noninteractive apt-get install -y " +
                 "curl ca-certificates xz-utils git python3 python3-pip wget procps sudo",
@@ -354,7 +362,7 @@ class UbuntuRuntime(
         }
         try {
             setState(UbuntuState.UPDATING, "Updating packages (apt update + upgrade)…", 10)
-            runChecked("apt-get update").getOrElse { return failStep("apt-get update failed", it) }
+            runAptUpdate().getOrElse { return failStep("apt-get update failed", it) }
             runChecked("DEBIAN_FRONTEND=noninteractive apt-get -y upgrade")
                 .getOrElse { return failStep("apt-get upgrade failed", it) }
             setState(UbuntuState.UPDATING, "Re-checking tools…", 70)
@@ -517,6 +525,29 @@ class UbuntuRuntime(
                 )
             }
             val detectedArch = smokeOut.lineSequence().lastOrNull { it.isNotBlank() }?.trim().orEmpty()
+
+            // Raw ubuntu-base tarballs ship WITHOUT apt sources — without this,
+            // the first `apt-get update` after importing a downloaded base fails.
+            // App backups already carry their sources; they are left untouched.
+            val aptDir = File(File(rootfs, "etc").apply { mkdirs() }, "apt")
+            val sourcesReady = withContext(Dispatchers.IO) { AptSources.hasActiveSources(aptDir) }
+            val importArch = AptSources.archFromUname(detectedArch)
+            if (!sourcesReady && importArch != null) {
+                setState(UbuntuState.IMPORTING, "Raw base detected — writing APT sources…", 97)
+                val osRelease = withContext(Dispatchers.IO) {
+                    runCatching { File(rootfs, "etc/os-release").readText() }.getOrDefault("")
+                }
+                val codename = AptSources.codenameFromOsRelease(osRelease) ?: RootfsCatalog.DEFAULT_CODENAME
+                withContext(Dispatchers.IO) {
+                    AptSources.writeFor(aptDir, importArch, codename)
+                    File(File(rootfs, "etc"), "resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
+                    File(File(rootfs, "etc"), "hosts").writeText("127.0.0.1 localhost\n")
+                }
+                addLog("Raw base tarball: APT sources written for $importArch ($codename) — apt-get update will work")
+            } else if (!sourcesReady) {
+                addLog("[warn] The archive has no active APT sources and the arch could not be detected — run 'apt-get update' may fail; use Repair to configure sources")
+            }
+
             val arch = when (detectedArch) {
                 "aarch64" -> "arm64"
                 "x86_64" -> "x86_64"
@@ -583,6 +614,170 @@ class UbuntuRuntime(
         } finally {
             pipelineRunning.set(false)
         }
+    }
+
+    /**
+     * Copies the cached (already downloaded + SHA-256 verified) Ubuntu base
+     * tarball to the user-picked [uri] — exporting the downloaded base itself
+     * so it can be moved to another device or kept for offline reinstall.
+     * Fast: a plain file copy, no re-packing.
+     */
+    suspend fun exportBaseCache(uri: Uri): Result<Unit> {
+        if (!pipelineRunning.compareAndSet(false, true)) {
+            return Result.failure(
+                ErrorInfoException(Errors.ubuntuFailure("An Ubuntu operation is already running — wait for it to finish")),
+            )
+        }
+        try {
+            val prevState = _status.value.state
+            setState(UbuntuState.EXPORTING, "Exporting the downloaded base archive…", 5)
+            val cache = UbuntuFileSystem.cacheDir(context)
+            val tarball = cache.listFiles()
+                ?.filter { it.isFile && (it.name.endsWith(".tar.gz") || it.name.endsWith(".tgz")) }
+                ?.maxByOrNull { it.length() }
+                ?: return failStep(
+                    "Export base failed",
+                    IllegalStateException("there is no downloaded Ubuntu base in the cache — install once, or import a base file instead"),
+                )
+            addLog("Exporting base archive: ${tarball.name} (${tarball.length() / MB} MB)")
+            withContext(Dispatchers.IO) {
+                val out = context.contentResolver.openOutputStream(uri, "wt")
+                    ?: throw IOException("could not open the destination file for writing")
+                out.use { o ->
+                    tarball.inputStream().use { ins ->
+                        val buf = ByteArray(128 * 1024)
+                        var done = 0L
+                        val total = tarball.length()
+                        while (true) {
+                            val n = ins.read(buf)
+                            if (n < 0) break
+                            o.write(buf, 0, n)
+                            done += n
+                            updateProgress(
+                                (5 + (done * 90 / total)).toInt().coerceIn(5, 95),
+                                "Exporting base… ${done / MB} / ${total / MB} MB",
+                            )
+                        }
+                    }
+                }
+            }
+            setState(
+                prevState,
+                "Base archive exported (${tarball.name}) — Import accepts it on any device with the same architecture",
+                100,
+            )
+            return Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return failStep("Export base failed", e)
+        } finally {
+            pipelineRunning.set(false)
+        }
+    }
+
+    /**
+     * Environment diagnostics for the Ubuntu stack — the honest numbers behind
+     * every "why did apt fail" question: free space seen by the app, proot
+     * binary state + version, PROOT_TMP_DIR writability, RAM available, DNS
+     * and APT sources inside the rootfs. Each check degrades to "(check
+     * failed: reason)" instead of aborting the whole report.
+     */
+    suspend fun diagnostics(): List<String> = withContext(Dispatchers.IO) {
+        val out = mutableListOf<String>()
+        val st = _status.value
+        out.add("== OpenChat Ubuntu diagnostics ==")
+        out.add("state: ${st.state} · installed=${st.installed} · version=${st.version ?: "?"} · arch=${st.arch ?: "?"}")
+        out.add("device ABI: ${abi()}")
+
+        // 1. Free space where the rootfs actually lives
+        val free = try {
+            StatFs(context.filesDir.absolutePath).availableBytes
+        } catch (e: Exception) {
+            -1L
+        }
+        out.add(
+            if (free >= 0) {
+                "free space (app data volume): ${free / MB} MB (" +
+                    "%.2f GB) — minimum install gate ${MIN_FREE_BYTES / MB} MB".format(free.toDouble() / (1000 * MB))
+            } else {
+                "free space: (measurement failed)"
+            }
+        )
+
+        // 2. proot binary
+        val bin = UbuntuFileSystem.prootBin(context)
+        out.add(
+            "proot binary: ${if (bin.isFile) "${bin.absolutePath} (${bin.length() / 1024} KB)" else "MISSING"}" +
+                if (bin.isFile) " executable=${bin.canExecute()}" else "",
+        )
+        if (bin.isFile && bin.canExecute()) {
+            try {
+                val p = ProcessBuilder(bin.absolutePath, "--version")
+                    .redirectErrorStream(true)
+                    .start()
+                val ver = p.inputStream.bufferedReader().use { it.readText().trim().lineSequence().firstOrNull() ?: "" }
+                p.waitFor(10, TimeUnit.SECONDS)
+                out.add("proot --version: $ver (exit ${p.exitValue()})")
+            } catch (e: Exception) {
+                out.add("proot --version: FAILED to start — ${e.message ?: e.javaClass.simpleName}")
+            }
+        }
+
+        // 3. PROOT_TMP_DIR writable?
+        val tmp = UbuntuFileSystem.prootTmpDir(context)
+        val probe = File(tmp, ".probe-${System.currentTimeMillis()}")
+        out.add(
+            "PROOT_TMP_DIR: ${tmp.absolutePath} exists=${tmp.isDirectory} writable=" + try {
+                tmp.mkdirs()
+                probe.createNewFile()
+                probe.writeText("ok")
+                probe.delete()
+                true
+            } catch (e: Exception) {
+                "false (${e.message ?: e.javaClass.simpleName})"
+            },
+        )
+
+        // 4. RAM available (host /proc/meminfo)
+        try {
+            val mem = File("/proc/meminfo").readLines()
+                .firstOrNull { it.startsWith("MemAvailable") }
+            out.add("RAM available: ${mem?.substringAfter(':')?.trim() ?: "unknown"}")
+        } catch (_: Exception) {
+            out.add("RAM available: (unreadable)")
+        }
+
+        // 5. Rootfs + in-rootfs checks (only when present)
+        val rootfs = rootfsDir()
+        val bash = File(rootfs, "bin/bash")
+        out.add("rootfs: ${rootfs.absolutePath} exists=${rootfs.isDirectory} bin/bash=${if (bash.isFile) "present" else if (rootfs.isDirectory) "MISSING" else "n/a"}")
+        if (bash.isFile) {
+            val aptDir = File(File(rootfs, "etc"), "apt")
+            out.add("apt sources configured: ${AptSources.hasActiveSources(aptDir)}")
+            runCatching {
+                val osRelease = File(rootfs, "etc/os-release").readText()
+                out.add("os-release codename: ${AptSources.codenameFromOsRelease(osRelease) ?: "?"}")
+            }
+            // DNS + disk from INSIDE the rootfs (bypasses the READY gate honestly)
+            val dns = runCommand("getent hosts ports.ubuntu.com || getent hosts archive.ubuntu.com", timeoutMs = 30_000)
+            out.add(
+                dns.fold(
+                    { s -> "in-rootfs DNS: ${s.lineSequence().firstOrNull()?.take(120) ?: "no answer (getent missing in base?)"}" },
+                    { "in-rootfs DNS: FAILED — ${it.message?.lineSequence()?.firstOrNull()?.take(120)}" },
+                ),
+            )
+            val disk = runCommand("df -h /tmp 2>/dev/null | tail -1", timeoutMs = 30_000)
+            disk.onSuccess { s -> out.add("in-rootfs /tmp volume: ${s.lineSequence().lastOrNull()?.take(140) ?: "?"}") }
+        }
+
+        // 6. The last failure tail, if any — ties the report to the visible error
+        val tail = _failureTail.value
+        if (tail.isNotEmpty()) {
+            out.add("last failure output tail:")
+            tail.takeLast(ProotFailureMapper.DETAIL_TAIL_LINES).forEach { out.add("  | ${it.take(200)}") }
+        }
+        out
     }
 
     // -------------------------------------------------------------------- exec
@@ -718,7 +913,7 @@ class UbuntuRuntime(
                             val line = br.readLine() ?: break
                             synchronized(tail) {
                                 tail.addLast(line)
-                                while (tail.size > TAIL_LINES) tail.removeFirst()
+                                while (tail.size > ProotFailureMapper.TAIL_LINES) tail.removeFirst()
                             }
                             try {
                                 onLine(line)
@@ -737,21 +932,29 @@ class UbuntuRuntime(
             if (!finished) {
                 proc.destroyForcibly()
                 reader.join(2000)
+                publishTail(tail)
                 return@withContext Result.failure(
                     ErrorInfoException(Errors.ubuntuFailure("Command timed out after ${timeoutMs}ms: $cmd")),
                 )
             }
             reader.join(5000)
             val code = proc.exitValue()
-            if (code == PROOT_FATAL_EXIT) {
-                // Exit 255 is proot's own fatal code (apt failures return 1/100).
-                // Map its log signatures to actionable errors, keep honest detail.
+            if (code != 0) {
                 val lines = synchronized(tail) { tail.toList() }
-                mapProotFailure(lines)?.let { return@withContext Result.failure(it) }
+                _failureTail.value = lines
+                if (code == PROOT_FATAL_EXIT) {
+                    // Exit 255 is proot's own fatal code (apt failures return 1/100).
+                    // EVERY 255 now maps to an actionable error that shows the real
+                    // output tail — no more bare "error code 255" with the cause hidden.
+                    return@withContext Result.failure(ErrorInfoException(ProotFailureMapper.map(lines)))
+                }
+            } else {
+                _failureTail.value = emptyList()
             }
             Result.success(code)
         } catch (e: Exception) {
             if (e is CancellationException) throw e
+            publishTail(tail)
             Result.failure(
                 ErrorInfoException(
                     Errors.ubuntuFailure("Failed to run command: ${e.message ?: e.javaClass.simpleName} — $cmd"),
@@ -760,103 +963,11 @@ class UbuntuRuntime(
         }
     }
 
-    /**
-     * Maps proot's own fatal output (exit 255) onto an actionable [ErrorInfo]
-     * instead of a bare "exited with code 255" — the difference between an apt
-     * failure and an environment problem lives in the log lines. Returns null
-     * when the output holds no known proot signature (caller keeps the code).
-     */
-    private fun mapProotFailure(lines: List<String>): ErrorInfoException? {
-        fun firstLine(vararg needles: String): String? =
-            lines.firstOrNull { line -> needles.any { line.contains(it, ignoreCase = true) } }
-
-        firstLine("can't create temporary", "can't create glue", "PROOT_TMP_DIR")?.let { hit ->
-            return ErrorInfoException(
-                ErrorInfo(
-                    title = "proot could not create its temporary files",
-                    detail = hit.trim(),
-                    causes = listOf(
-                        "proot writes glue/temp files to PROOT_TMP_DIR at startup",
-                        "that directory was missing, not writable, or wiped by the system",
-                    ),
-                    suggestions = listOf(
-                        "Run Repair — it recreates the app's writable directories",
-                        "If it persists, Reset and Install again",
-                        "Report this bug if it happens on every attempt",
-                    ),
-                    retryable = true,
-                ),
-            )
-        }
-        firstLine("No space left on device", "ENOSPC")?.let { hit ->
-            return ErrorInfoException(
-                ErrorInfo(
-                    title = "Storage is full",
-                    detail = hit.trim(),
-                    causes = listOf("The rootfs and its packages need more space than is available"),
-                    suggestions = listOf(
-                        "Free up storage (Settings → Storage shows usage)",
-                        "Remove large files from /root inside Ubuntu",
-                        "As last resort Reset, then Install again",
-                    ),
-                    retryable = true,
-                ),
-            )
-        }
-        firstLine("Exec format error")?.let { hit ->
-            return ErrorInfoException(
-                ErrorInfo(
-                    title = "Wrong architecture",
-                    detail = hit.trim(),
-                    causes = listOf(
-                        "The rootfs (or an imported archive) was built for a different CPU architecture",
-                        "for example an amd64/x86 image on an arm64 phone",
-                    ),
-                    suggestions = listOf(
-                        "Use Reset, then Install — the pinned catalog always matches this device",
-                        "For Import: pick an archive exported from the same architecture",
-                    ),
-                    retryable = false,
-                ),
-            )
-        }
-        firstLine("Permission denied")?.let { hit ->
-            if (hit.contains("rootfs") || hit.contains("proot") || lines.any { it.contains("proot", ignoreCase = true) }) {
-                return ErrorInfoException(
-                    ErrorInfo(
-                        title = "Permission denied on the Ubuntu files",
-                        detail = hit.trim(),
-                        causes = listOf(
-                            "The app's private directories became inaccessible",
-                            "A device cleaner/booster app or SELinux policy may have interfered",
-                        ),
-                        suggestions = listOf(
-                            "Run Repair to recreate the writable directories",
-                            "Close cleaner/booster apps that touch app data",
-                            "As last resort Reset, then Install again",
-                        ),
-                        retryable = true,
-                    ),
-                )
-            }
-        }
-        if (lines.any { it.contains("proot error", ignoreCase = true) }) {
-            val first = lines.firstOrNull { it.contains("proot error", ignoreCase = true) } ?: ""
-            return ErrorInfoException(
-                ErrorInfo(
-                    title = "proot failed to start the command",
-                    detail = first.trim(),
-                    causes = listOf("proot reported a fatal error before the command could run"),
-                    suggestions = listOf(
-                        "Check the Ubuntu log below for the full proot output",
-                        "Run Repair; if it persists, Reset and Install again",
-                    ),
-                    retryable = true,
-                ),
-            )
-        }
-        return null
+    /** Stores the captured output tail for the error card (synchronized read). */
+    private fun publishTail(tail: ArrayDeque<String>) {
+        _failureTail.value = synchronized(tail) { tail.toList() }
     }
+
 
     /** Checked run used inside the install pipeline (bypasses the READY gate). */
     private suspend fun runChecked(cmd: String): Result<Unit> =
@@ -865,13 +976,44 @@ class UbuntuRuntime(
                 if (code == 0) {
                     Result.success(Unit)
                 } else {
+                    // Non-zero guest command failure: surface the real output tail
+                    // with the error so the cause is visible without opening the log.
                     Result.failure(
-                        ErrorInfoException(Errors.ubuntuFailure("'$cmd' exited with code $code (see the Ubuntu log)")),
+                        ErrorInfoException(
+                            ErrorInfo(
+                                title = "'$cmd' exited with code $code",
+                                detail = ProotFailureMapper.withTail("The command failed (exit $code).", _failureTail.value),
+                                causes = listOf(
+                                    "The command inside the rootfs reported an error",
+                                    "The full output is shown above and in the log below",
+                                ),
+                                suggestions = listOf(
+                                    "Read the output tail — apt prints the failing line explicitly",
+                                    "Run Repair to rebuild partial package state (apt-get -f install)",
+                                    "If it repeats every attempt, run diagnostics and report the output",
+                                ),
+                                retryable = true,
+                            ),
+                        ),
                     )
                 }
             },
             onFailure = { Result.failure(it) },
         )
+
+    /**
+     * `apt-get update` with transport-level retries plus one full retry pass —
+     * transient DNS/mirror failures are the most common non-storage cause of
+     * failed installs/updates on mobile networks.
+     */
+    private suspend fun runAptUpdate(): Result<Unit> {
+        val cmd = "apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update"
+        val first = runChecked(cmd)
+        if (first.isSuccess) return first
+        addLog("[warn] apt-get update failed once — retrying after 3s (transient network/mirror failures are common)")
+        delay(3000)
+        return runChecked(cmd)
+    }
 
     private fun failStep(step: String, t: Throwable): Result<Unit> {
         if (t is CancellationException) throw t

@@ -92,6 +92,44 @@ data class AIModel(
 
 enum class Role { SYSTEM, USER, ASSISTANT, TOOL }
 
+/** Attachment kind — drives how the composer preview and the transports treat it. */
+enum class AttachmentKind { TEXT, IMAGE, BINARY }
+
+/**
+ * A file attached to a chat message. TEXT files carry their decoded content
+ * (injected into the prompt as a fenced block); IMAGE files carry a local
+ * path (base64-encoded at send time for vision-capable providers); BINARY
+ * files are named only (content is never sent).
+ */
+data class Attachment(
+    val name: String,
+    val mime: String,
+    val sizeBytes: Long,
+    val kind: AttachmentKind,
+    val textContent: String? = null,
+    val localPath: String? = null,
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("name", name)
+        .put("mime", mime)
+        .put("sizeBytes", sizeBytes)
+        .put("kind", kind.name)
+        .put("textContent", textContent ?: JSONObject.NULL)
+        .put("localPath", localPath ?: JSONObject.NULL)
+
+    companion object {
+        fun fromJson(o: JSONObject): Attachment = Attachment(
+            name = o.optString("name", "file"),
+            mime = o.optString("mime", "application/octet-stream"),
+            sizeBytes = o.optLong("sizeBytes", 0L),
+            kind = AttachmentKind.entries.firstOrNull { it.name == o.optString("kind") }
+                ?: AttachmentKind.BINARY,
+            textContent = if (o.isNull("textContent")) null else o.optString("textContent"),
+            localPath = if (o.isNull("localPath")) null else o.optString("localPath"),
+        )
+    }
+}
+
 /** A tool-execution block shown in chat (command + captured output, spec §5, §28). */
 data class ToolBlock(
     val id: String,
@@ -99,6 +137,8 @@ data class ToolBlock(
     val command: String,
     val output: String,
     val exitCode: Int? = null,
+    /** Source URLs (web search results) rendered as tappable chips. */
+    val sources: List<String> = emptyList(),
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
@@ -106,6 +146,7 @@ data class ToolBlock(
         .put("command", command)
         .put("output", output)
         .put("exitCode", exitCode ?: JSONObject.NULL)
+        .put("sources", org.json.JSONArray(sources))
 
     companion object {
         fun fromJson(o: JSONObject): ToolBlock = ToolBlock(
@@ -114,6 +155,11 @@ data class ToolBlock(
             command = o.optString("command"),
             output = o.optString("output"),
             exitCode = if (o.isNull("exitCode")) null else o.optInt("exitCode"),
+            sources = o.optJSONArray("sources")?.let { arr ->
+                (0 until arr.length()).mapNotNull { i ->
+                    arr.optString(i).takeIf { it.isNotBlank() }
+                }
+            } ?: emptyList(),
         )
     }
 }
@@ -126,6 +172,7 @@ data class ChatMessage(
     val modelId: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
     val error: String? = null,
+    val attachments: List<Attachment> = emptyList(),
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
@@ -135,6 +182,7 @@ data class ChatMessage(
         .put("modelId", modelId ?: JSONObject.NULL)
         .put("timestamp", timestamp)
         .put("error", error ?: JSONObject.NULL)
+        .put("attachments", org.json.JSONArray(attachments.map { it.toJson() }))
 
     companion object {
         fun fromJson(o: JSONObject): ChatMessage = ChatMessage(
@@ -149,6 +197,11 @@ data class ChatMessage(
             modelId = if (o.isNull("modelId")) null else o.optString("modelId"),
             timestamp = o.optLong("timestamp", System.currentTimeMillis()),
             error = if (o.isNull("error")) null else o.optString("error"),
+            attachments = o.optJSONArray("attachments")?.let { arr ->
+                (0 until arr.length()).mapNotNull { i ->
+                    runCatching { Attachment.fromJson(arr.getJSONObject(i)) }.getOrNull()
+                }
+            } ?: emptyList(),
         )
     }
 }
@@ -161,6 +214,7 @@ data class Conversation(
     val createdAt: Long = System.currentTimeMillis(),
     var updatedAt: Long = System.currentTimeMillis(),
     var backend: ChatBackend = ChatBackend.DIRECT,
+    var webSearch: Boolean = false,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
@@ -170,6 +224,7 @@ data class Conversation(
         .put("createdAt", createdAt)
         .put("updatedAt", updatedAt)
         .put("backend", backend.name)
+        .put("webSearch", webSearch)
 
     companion object {
         fun fromJson(o: JSONObject): Conversation = Conversation(
@@ -185,6 +240,7 @@ data class Conversation(
             updatedAt = o.optLong("updatedAt", 0L),
             backend = ChatBackend.entries.firstOrNull { it.name == o.optString("backend") }
                 ?: ChatBackend.DIRECT,
+            webSearch = o.optBoolean("webSearch", false),
         )
     }
 }

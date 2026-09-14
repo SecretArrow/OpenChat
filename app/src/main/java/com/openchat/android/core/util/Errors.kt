@@ -99,13 +99,14 @@ object Errors {
         causes = listOf(
             "Corrupted rootfs (incomplete download/extract)",
             "Missing executable (proot/bash/opencode deleted)",
-            "Storage full — rootfs needs several hundred MB",
-            "Permission/SELinux restriction on this device"
+            "Network/mirror failure during apt operations",
+            "Permission/SELinux restriction on this device",
+            "Storage pressure on the app's data volume (check Settings → Ubuntu → Run diagnostics for the real numbers)"
         ),
         suggestions = listOf(
             "Use Repair to re-verify and re-extract the rootfs",
             "Use Reset for a clean re-install",
-            "Check free storage in Settings → Storage"
+            "Run diagnostics (Settings → Ubuntu) for an honest environment report"
         ),
         retryable = true,
         repairAction = RepairAction.UBUNTU_REPAIR,

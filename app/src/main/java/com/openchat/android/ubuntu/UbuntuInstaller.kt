@@ -130,43 +130,15 @@ class UbuntuInstaller(private val context: Context) {
      * (ports.ubuntu.com for arm64/armhf, archive.ubuntu.com for amd64 — including
      * the deb822 `ubuntu.sources` file present in newer bases, which is rewritten
      * in place so the suites are never configured twice) and /etc/hosts.
+     * The sources writing itself lives in the shared, JVM-tested [AptSources].
      */
     suspend fun configure(rootfs: File, variant: RootfsVariant): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val arch = archFromUrl(variant.url)
-            val aptBase = if (arch == "amd64") "http://archive.ubuntu.com/ubuntu" else "http://ports.ubuntu.com/ubuntu-ports"
-            val codename = variant.codename
             val etc = File(rootfs, "etc").apply { mkdirs() }
-
-            File(etc, "resolv.conf").writeText(
-                "nameserver 8.8.8.8\nnameserver 1.1.1.1\n",
-            )
-            File(etc, "hosts").writeText(
-                "127.0.0.1 localhost\n",
-            )
-
-            val aptDir = File(etc, "apt").apply { mkdirs() }
-            val ubuntuSources = File(File(aptDir, "sources.list.d").apply { mkdirs() }, "ubuntu.sources")
-            if (ubuntuSources.exists()) {
-                // Newer bases (noble) ship a deb822 file — rewrite it there and keep
-                // sources.list out of the way, or apt would see every suite twice.
-                ubuntuSources.writeText(
-                    "Types: deb\n" +
-                        "URIs: $aptBase\n" +
-                        "Suites: $codename $codename-updates $codename-security\n" +
-                        "Components: main universe\n" +
-                        "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n",
-                )
-                File(aptDir, "sources.list").writeText(
-                    "# Configured by OpenChat — see sources.list.d/ubuntu.sources\n",
-                )
-            } else {
-                File(aptDir, "sources.list").writeText(
-                    "deb $aptBase $codename main universe\n" +
-                        "deb $aptBase $codename-updates main universe\n" +
-                        "deb $aptBase $codename-security main universe\n",
-                )
-            }
+            File(etc, "resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
+            File(etc, "hosts").writeText("127.0.0.1 localhost\n")
+            AptSources.writeFor(File(etc, "apt"), arch, variant.codename).getOrThrow()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(

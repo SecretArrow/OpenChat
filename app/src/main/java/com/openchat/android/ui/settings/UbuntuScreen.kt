@@ -92,6 +92,15 @@ fun UbuntuScreen(nav: NavHostController) {
         }
     }
 
+    // Export of the cached base tarball (the downloaded ubuntu-base archive).
+    val exportBaseLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/gzip"),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            op("Export base") { AppGraph.ubuntu.exportBaseCache(uri) }
+        }
+    }
+
     // Import: user picks an exported .tar.gz (or a full rootfs tarball).
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
@@ -108,21 +117,50 @@ fun UbuntuScreen(nav: NavHostController) {
         return "openchat-ubuntu-$stamp.tar.gz"
     }
 
+    val failureTail by AppGraph.ubuntu.failureTail.collectAsState()
+    var diagnosticsReport by remember { mutableStateOf<List<String>?>(null) }
+    var runningDiagnostics by remember { mutableStateOf(false) }
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+
+    fun copyReport() {
+        val text = buildString {
+            appendLine("OpenChat Ubuntu report")
+            appendLine("state: ${status.state} · installed=${status.installed} · message=${status.message}")
+            appendLine("free space (app data): " + runCatching {
+                val s = android.os.StatFs(AppGraph.appContext.filesDir.absolutePath)
+                "${s.availableBytes / (1024 * 1024)} MB"
+            }.getOrDefault("?"))
+            if (failureTail.isNotEmpty()) {
+                appendLine("output tail:")
+                failureTail.takeLast(20).forEach { appendLine("  | $it") }
+            }
+            diagnosticsReport?.forEach { appendLine(it) }
+        }
+        clipboard.setText(androidx.compose.ui.text.AnnotatedString(text))
+        toast("Report copied — attach it to any bug report")
+    }
+
     val errorInfo: ErrorInfo? = if (status.state == UbuntuState.ERROR) {
+        // Honest error: the REAL output tail is shown instead of a guessed
+        // cause list (users reported "error code 255" while their storage was
+        // fine — the old card wrongly listed storage as a likely cause).
         ErrorInfo(
-            title = "Ubuntu installation error",
-            detail = status.message ?: "The last Ubuntu operation failed.",
+            title = "Ubuntu operation failed",
+            detail = (status.message ?: "The last Ubuntu operation failed.") +
+                if (failureTail.isNotEmpty()) {
+                    "\n\nOutput tail:\n" + failureTail.takeLast(12).joinToString("\n") { "| $it" }
+                } else {
+                    ""
+                },
             causes = listOf(
-                "Download interrupted or checksum mismatch",
-                "Storage full — the rootfs needs several hundred MB",
-                "proot could not create its temporary files (PROOT_TMP_DIR)",
-                "Extraction failed (corrupt tarball or SELinux restriction)"
+                "The exact failing lines are shown above — they name the real cause",
+                "Run diagnostics below for free space, proot, DNS and APT source checks",
             ),
             suggestions = listOf(
-                "Use Repair to re-verify and re-extract the rootfs",
+                "Use Repair to re-verify and re-extract the rootfs (fixes partial apt state)",
                 "Use Reset for a clean re-install",
                 "Export first if you need a backup of the current userspace",
-                "Check free space in Settings → Storage"
+                "Tap Copy report and include it when asking for help",
             ),
             retryable = true,
             repairAction = RepairAction.UBUNTU_REPAIR,
@@ -216,6 +254,49 @@ fun UbuntuScreen(nav: NavHostController) {
                 ) { Text("Reset", color = MaterialTheme.colorScheme.error) }
             }
 
+            // Diagnostics: honest environment report (space, proot, tmp dir,
+            // RAM, DNS, apt sources) — the tool for every "why did apt fail".
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Diagnostics",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    runningDiagnostics = true
+                                    diagnosticsReport = AppGraph.ubuntu.diagnostics()
+                                    runningDiagnostics = false
+                                }
+                            },
+                            enabled = !blocked && !runningDiagnostics,
+                        ) { Text(if (runningDiagnostics) "Running…" else "Run diagnostics") }
+                    }
+                    Text(
+                        "Checks free space as seen by the app, the proot binary, " +
+                            "PROOT_TMP_DIR writability, RAM, DNS and APT sources inside the rootfs.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                    diagnosticsReport?.let { report ->
+                        Text(
+                            report.joinToString("\n"),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 260.dp)
+                                .verticalScroll(rememberScrollState())
+                                .padding(4.dp),
+                        )
+                        OutlinedButton(onClick = { copyReport() }) { Text("Copy report") }
+                    }
+                }
+            }
+
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
@@ -226,8 +307,10 @@ fun UbuntuScreen(nav: NavHostController) {
                         "Export packs the whole userspace (installed packages, workspaces, " +
                             "configuration) into one .tar.gz. Import restores it on this device " +
                             "— or on a new device with the same architecture — replacing whatever " +
-                            "is currently installed. Export also works when Ubuntu is broken, " +
-                            "so you can back up before a Reset.",
+                            "is currently installed. A raw ubuntu-base tarball downloaded from " +
+                            "cdimage.ubuntu.com is also accepted: OpenChat detects it and writes " +
+                            "DNS + APT sources automatically. Export also works when Ubuntu is " +
+                            "broken, so you can back up before a Reset.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline,
                     )
@@ -251,6 +334,17 @@ fun UbuntuScreen(nav: NavHostController) {
                             enabled = !blocked,
                         ) { Text("Import") }
                     }
+                    Text(
+                        "Export base file copies the downloaded ubuntu-base .tar.gz from the " +
+                            "app cache — move it to another device or keep it for offline reinstall " +
+                            "(Import accepts it directly, no download needed).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                    OutlinedButton(
+                        onClick = { exportBaseLauncher.launch("openchat-ubuntu-base.tar.gz") },
+                        enabled = !blocked,
+                    ) { Text("Export base file") }
                 }
             }
 
@@ -302,11 +396,13 @@ fun UbuntuScreen(nav: NavHostController) {
 
     if (confirmImport) {
         ConfirmDialog(
-            title = "Import this userspace?",
-            text = "The archive replaces the currently installed Ubuntu userspace — packages, " +
-                "workspaces and configuration are restored exactly as they were exported. " +
-                "Open terminal sessions will be closed. Make sure the archive was exported " +
-                "from a device with the same architecture (arm64/armhf/x86_64).",
+            title = "Import this archive?",
+            text = "The archive replaces the currently installed Ubuntu userspace. " +
+                "Both formats are accepted: an app Export (full backup with your packages " +
+                "and files) or a raw ubuntu-base tarball from cdimage.ubuntu.com — raw " +
+                "bases are auto-configured with DNS + APT sources. Open terminal sessions " +
+                "will be closed. Make sure the archive matches this device architecture " +
+                "(arm64/armhf/x86_64).",
             onConfirm = {
                 confirmImport = false
                 val uri = pendingImportUri

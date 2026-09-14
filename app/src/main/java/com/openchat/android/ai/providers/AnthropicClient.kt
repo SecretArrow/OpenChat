@@ -36,11 +36,39 @@ object AnthropicClient : ChatClient {
                 req.messages.forEach { m ->
                     when (m.role) {
                         Role.SYSTEM -> Unit // moved to the "system" field above
-                        else -> if (m.content.isNotBlank()) {
+                        else -> if (m.content.isNotBlank() || m.attachments.isNotEmpty()) {
+                            val images = com.openchat.android.ai.AttachmentFiles.imagesOf(m.attachments)
+                            val content: Any = if (images.isEmpty()) {
+                                m.content
+                            } else {
+                                // Anthropic vision shape: content blocks with
+                                // base64 image sources.
+                                JSONArray().apply {
+                                    if (m.content.isNotBlank()) {
+                                        put(JSONObject().put("type", "text").put("text", m.content))
+                                    }
+                                    images.forEach { img ->
+                                        val b64 = com.openchat.android.ai.AttachmentFiles.imageBase64(img)
+                                        if (b64 != null) {
+                                            put(
+                                                JSONObject()
+                                                    .put("type", "image")
+                                                    .put(
+                                                        "source",
+                                                        JSONObject()
+                                                            .put("type", "base64")
+                                                            .put("media_type", img.mime)
+                                                            .put("data", b64),
+                                                    ),
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                             put(
                                 JSONObject()
                                     .put("role", wireRole(m.role))
-                                    .put("content", m.content)
+                                    .put("content", content)
                             )
                         }
                     }
