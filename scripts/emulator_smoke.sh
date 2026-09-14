@@ -42,6 +42,12 @@ echo "installing: $APK  (package: $APP_ID, activity: $MAIN_ACT)"
 # --- install + cold launch ----------------------------------------------------
 adb install -r "$APK"
 adb logcat -c
+# keep the screen awake + dismiss any keyguard — uiautomator dump returns the
+# keyguard (or nothing) when the display sleeps, which would silently break
+# every subsequent UI-driven tap
+adb shell svc power stayon true || true
+adb shell input keyevent KEYCODE_WAKEUP || true
+adb shell wm dismiss-keyguard || true
 adb shell am start -W -n "$COMPONENT" || { echo "::error::am start failed for $COMPONENT"; exit 1; }
 echo "launched, settling 12s…"
 sleep 12
@@ -76,31 +82,46 @@ check_no_fatal() {
 
 # --- uiautomator helpers ------------------------------------------------------
 ui_dump() {
-  adb shell uiautomator dump >/dev/null 2>&1 || true
+  local out
+  out="$(adb shell uiautomator dump /sdcard/window_dump.xml 2>&1 | tr -d '\r' || true)"
+  if ! printf '%s' "$out" | grep -q "dumped to"; then
+    echo "  [dump] uiautomator did not report success: $out"
+    sleep 2
+  fi
 }
 
-# print "cx cy" of the first node matching attr=value, empty when absent
-ui_center() { # $1=attr(text|content-desc) $2=value
-  adb shell cat /sdcard/window_dump.xml 2>/dev/null | tr -d '\r' \
-    | python3 "$ROOT/scripts/emu_ui.py" "$1" "$2" || true
-}
-
-ui_tap() { # $1=attr $2=value $3=human label
-  local c="" tries=0
-  while [ "$tries" -lt 10 ]; do
+ui_tap() { # $1=human label; remaining args = attr value pairs tried in order
+  local label="$1"; shift
+  local PAIRS=("$@")
+  local tries=0 c="" XML=""
+  while [ "$tries" -lt 8 ]; do
     ui_dump
-    c="$(ui_center "$1" "$2")"
-    if [ -n "$c" ]; then
-      # shellcheck disable=SC2086
-      adb shell input tap $c
-      echo "  tapped [$3] at ($c)"
-      return 0
+    XML="$(adb shell cat /sdcard/window_dump.xml 2>/dev/null | tr -d '\r' || true)"
+    if [ -z "$XML" ]; then
+      echo "  [dump] empty XML (attempt $tries)"
+    else
+      local i=0
+      while [ "$i" -lt "${#PAIRS[@]}" ]; do
+        c="$(printf '%s' "$XML" | python3 "$ROOT/scripts/emu_ui.py" "${PAIRS[$i]}" "${PAIRS[$((i + 1))]}" || true)"
+        if [ -n "$c" ]; then
+          # shellcheck disable=SC2086
+          adb shell input tap $c
+          echo "  tapped [$label] via ${PAIRS[$i]}='${PAIRS[$((i + 1))]} at ($c)"
+          return 0
+        fi
+        i=$((i + 2))
+      done
+      if [ "$tries" -eq 0 ]; then
+        echo "  [dump] XML size ${#XML}, no candidate matched for [$label]; XML head:"
+        printf '%s\n' "$XML" | head -c 1500
+        echo " …"
+      fi
     fi
     adb shell input swipe 540 1500 540 500 250   # scroll down, retry
-    sleep 1
+    sleep 2
     tries=$((tries + 1))
   done
-  fail_with_logs "UI element not found after scroll retries: $1=$2 ($3)"
+  fail_with_logs "UI element not found after scroll retries: $label"
 }
 
 shot() { # $1 = slug
@@ -112,9 +133,9 @@ shot() { # $1 = slug
 visit_subscreen() { # $1 = row label, $2 = slug
   adb shell input keyevent 4          # ensure we are at Settings root
   sleep 1
-  ui_tap content-desc Settings "bottom-nav Settings"
+  ui_tap "bottom-nav Settings" content-desc Settings text Settings
   sleep 1
-  ui_tap text "$1" "settings row: $1"
+  ui_tap "settings row: $1" text "$1" content-desc "$1"
   sleep 2.5
   check_alive "screen: $1"
   check_no_fatal
@@ -129,19 +150,20 @@ check_no_fatal
 shot "01-chat-cold"
 
 # --- main destinations via bottom navigation ----------------------------------
-ui_tap content-desc Terminal "bottom-nav Terminal"
+adb shell input keyevent KEYCODE_WAKEUP || true   # screen must be on for taps
+ui_tap "bottom-nav Terminal" content-desc Terminal text Terminal
 sleep 2.5
 check_alive "screen: Terminal"
 check_no_fatal
 shot "02-terminal"
 
-ui_tap content-desc Files "bottom-nav Files"
+ui_tap "bottom-nav Files" content-desc Files text Files
 sleep 2.5
 check_alive "screen: Files"
 check_no_fatal
 shot "03-files"
 
-ui_tap content-desc Settings "bottom-nav Settings"
+ui_tap "bottom-nav Settings" content-desc Settings text Settings
 sleep 2
 check_alive "screen: Settings"
 check_no_fatal
@@ -162,7 +184,7 @@ visit_subscreen "Storage"                   "15-storage"
 visit_subscreen "About"                     "16-about"
 
 # --- back to start destination, final evidence --------------------------------
-ui_tap content-desc Chat "bottom-nav Chat"
+ui_tap "bottom-nav Chat" content-desc Chat text Chat
 sleep 2
 check_alive "screen: Chat (final)"
 check_no_fatal
