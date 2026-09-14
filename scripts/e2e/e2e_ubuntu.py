@@ -454,31 +454,36 @@ class E2E:
                         try:
                             probe_lines = []
                             P = f"/data/data/{self.adb.package}/files"
-                            # Exec ladder: isolate exactly WHERE proot dies —
-                            # /bin/true (static-ish tiny exec), echo (dynamic),
-                            # bash --version (dynamic, no threads), apt (threads).
-                            ladder = (
-                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs /bin/true; echo LADDER_true=$?\n"
-                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs /bin/echo hello; echo LADDER_echo=$?\n"
-                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs /bin/bash --version 2>&1 | head -1; echo LADDER_bash=$?\n"
-                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs /bin/bash -c 'apt --version' 2>&1 | head -2; echo LADDER_apt=$?\n"
-                                f"{P}/ubuntu/bin/proot --version 2>&1 | head -1; echo LADDER_prootversion=$?\n"
+                            # 1) Reproduce the app's EXACT exec context: env -i
+                            # with only baseEnv (run-as shells inherit extra
+                            # vars AND skip the zygote seccomp filter — env -i
+                            # still skips seccomp but isolates the env vars).
+                            env_i = (
+                                f"env -i HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/node/bin "
+                                f"TERM=xterm-256color LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive TMPDIR=/tmp "
+                                f"PROOT_NO_SECCOMP=1 PROOT_TMP_DIR={P}/ubuntu/tmp "
+                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs "
+                                f"/bin/bash -c 'apt-get update' 2>&1 | tail -3; echo ENVI_RC=$?\n"
                             )
-                            probe_lines.append("ladder (raw run-as sh, stderr merged):\n" + self.adb.run_as_sh(ladder)[:1200])
-                            raw = self.inroot_raw(
-                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs /bin/bash -c 'uname -m; apt-get update' 2>&1 | tail -5")
-                            probe_lines.append("inroot uname+aptget (stderr merged):\n" + raw[:1200])
-                            # Kernel-side truth: seccomp kills log the blocked
-                            # syscall number in dmesg. google_apis emulators
-                            # allow `adb root` — best effort, never fatal.
+                            probe_lines.append("env -i (exact app env):\n" + self.adb.run_as_sh(env_i)[:800])
+                            # 2) Seccomp state: the app process (zygote filter)
+                            # vs this run-as shell (no filter).
+                            app_pid = self.adb.pid(self.adb.package).split()[0:1]
+                            app_pid = app_pid[0] if app_pid else ""
+                            seccomp_app = self.adb.run_as("grep", "Seccomp", f"/proc/{app_pid}/status") if app_pid else ""
+                            seccomp_self = self.adb.run_as("grep", "Seccomp", "/proc/self/status")
+                            probe_lines.append(f"app pid={app_pid} Seccomp: {seccomp_app.strip()}\nrun-as self Seccomp: {seccomp_self.strip()}")
+                            # 3) Kernel audit: SECCOMP_RET_KILL_THREAD records
+                            # type=1326 with sig=31 syscall=NNN — the blocked
+                            # syscall number is the root-cause payload.
                             run(self.adb.base + ["root"], timeout=60)
                             time.sleep(3)
                             dmesg = self.adb.shell("dmesg")
-                            seccomp = "\n".join(
+                            kills = "\n".join(
                                 l for l in dmesg.split("\n")
-                                if re.search(r"seccomp|SIGSYS|openchat|proot", l, re.I)
+                                if re.search(r"type=1326|sig=31|code=0x", l)
                             )[-3000:]
-                            probe_lines.append("dmesg seccomp/openchat tail:\n" + (seccomp or "(no matches — dmesg unreadable or empty)"))
+                            probe_lines.append("dmesg seccomp-kill audit (type=1326):\n" + (kills or "(none)"))
                             body = "\n".join(probe_lines)
                             with open(os.path.join(self.out, "logs", "apt-probe.log"), "a") as f:
                                 f.write(f"\n=== inroot apt probe {now_iso()} ===\n{body[:5000]}\n")
