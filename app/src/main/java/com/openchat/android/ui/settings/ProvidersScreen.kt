@@ -39,7 +39,6 @@ import androidx.navigation.NavHostController
 import com.openchat.android.AppGraph
 import com.openchat.android.core.model.Provider
 import com.openchat.android.core.model.ProviderPreset
-import com.openchat.android.core.model.ProviderPresets
 import com.openchat.android.ui.components.AppIcons
 
 /**
@@ -109,7 +108,7 @@ fun ProvidersScreen(nav: NavHostController) {
 
     if (showPresetPicker) {
         PresetPickerDialog(
-            presets = remember { ProviderPresets.loadFromAssets(AppGraph.appContext) },
+            presets = remember { ProviderPreset.loadFromAssets(AppGraph.appContext) },
             onDismiss = { showPresetPicker = false },
             onPick = { preset ->
                 showPresetPicker = false

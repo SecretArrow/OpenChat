@@ -51,7 +51,6 @@ import com.openchat.android.ai.ModelDiscovery
 import com.openchat.android.core.model.AIModel
 import com.openchat.android.core.model.Provider
 import com.openchat.android.core.model.ProviderPreset
-import com.openchat.android.core.model.ProviderPresets
 import com.openchat.android.core.model.ProviderType
 import com.openchat.android.core.model.PresetMapper
 import com.openchat.android.ui.components.ConfirmDialog
@@ -95,7 +94,7 @@ fun ProviderEditScreen(nav: NavHostController, providerId: String, presetId: Str
 
     val preset: ProviderPreset? = remember(presetId) {
         presetId?.takeIf { it.isNotBlank() }?.let { id ->
-            ProviderPresets.loadFromAssets(AppGraph.appContext).firstOrNull { it.id == id }
+            ProviderPreset.loadFromAssets(AppGraph.appContext).firstOrNull { it.id == id }
         }
     }
     // Concrete protocol for multi-protocol presets ("openai" | "anthropic" | "auto").

@@ -70,11 +70,11 @@ class ProviderPresetsTest {
     """.trimIndent()
 
     private fun byId(id: String): ProviderPreset =
-        ProviderPresets.parse(catalog).first { it.id == id }
+        ProviderPreset.parse(catalog).first { it.id == id }
 
     @Test
     fun `all nine bundled presets parse in catalog order`() {
-        val presets = ProviderPresets.parse(catalog)
+        val presets = ProviderPreset.parse(catalog)
         assertEquals(9, presets.size)
         assertEquals(
             listOf(
@@ -183,18 +183,18 @@ class ProviderPresetsTest {
           "not-even-an-object"
         ]}
         """.trimIndent()
-        val presets = ProviderPresets.parse(mixed)
+        val presets = ProviderPreset.parse(mixed)
         assertEquals(1, presets.size)
         assertEquals("ok", presets[0].id)
 
-        assertEquals(emptyList<ProviderPreset>(), ProviderPresets.parse("not json at all"))
-        assertEquals(emptyList<ProviderPreset>(), ProviderPresets.parse("{}"))
-        assertEquals(emptyList<ProviderPreset>(), ProviderPresets.parse(""))
+        assertEquals(emptyList<ProviderPreset>(), ProviderPreset.parse("not json at all"))
+        assertEquals(emptyList<ProviderPreset>(), ProviderPreset.parse("{}"))
+        assertEquals(emptyList<ProviderPreset>(), ProviderPreset.parse(""))
     }
 
     @Test
     fun `id falls back to slugified name and connection lookup is case-safe`() {
-        val p = ProviderPresets.parse(
+        val p = ProviderPreset.parse(
             """{"providers":[{"name":"My Custom Router","connections":{
               "OpenAI":{"baseUrl":"https://mcr","auth":{"type":"bearer","header":"Authorization"},
                 "endpoints":{"models":"/models"}}}}]}"""
@@ -211,7 +211,7 @@ class ProviderPresetsTest {
         // Gradle JVM unit tests run with cwd = app/ — read the actual asset file.
         val f = java.io.File("src/main/assets/provider_presets.json")
         org.junit.Assume.assumeTrue("asset file not found (run from app/)", f.exists())
-        val presets = ProviderPresets.parse(f.readText())
+        val presets = ProviderPreset.parse(f.readText())
         assertEquals(9, presets.size)
         assertEquals("agentrouter", presets[0].id)
         assertEquals("tokenrouter", presets[8].id)
