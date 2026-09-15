@@ -377,8 +377,11 @@ class UbuntuInstaller(private val context: Context) {
         const val NODE_VERSION = "v20.18.1"
 
         /** Pinned SHA-256 of assets/ubuntu/compat/x86_64/libopenchat_compat.so
-         *  (build: scripts/guest-compat/build.sh, source: compat.c). */
+         *  (build: scripts/guest-compat/build.sh, source: compat.c). The v2
+         *  build adds the hardlink copy-fallback: dpkg backup links get
+         *  EACCES under the emulator's seccomp/proot layers even though the
+         *  rest of the *at() family is allowed (E2E run 34936568395). */
         const val COMPAT_LIB_SHA256 =
-            "50929e9834ecc23d209134cb5bbdc05d643f5b5433fd3527d400d724c090c492"
+            "b58324849d4084879109ef3c64ef7528e5ab77e2cb505f947d27d2c6d3497f42"
     }
 }

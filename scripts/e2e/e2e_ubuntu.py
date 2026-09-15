@@ -523,6 +523,16 @@ class E2E:
                                 f"/bin/bash -c 'apt-get update' 2>&1 | tail -3; echo ENVI_RC=$?\n"
                             )
                             probe_lines.append("env -i (exact app env):\n" + self.adb.run_as_sh(env_i)[:800])
+                            # 1b) dpkg backup-link probe: hardlinks are the
+                            # syscall layer dpkg needs for overwrites — capture
+                            # whether they are denied outside the app filter.
+                            link_probe = (
+                                f"env -i HOME=/root PATH=/usr/bin:/bin TMPDIR=/tmp PROOT_NO_SECCOMP=1 PROOT_TMP_DIR={P}/ubuntu/tmp "
+                                f"LD_LIBRARY_PATH={P}/ubuntu/lib PROOT_LOADER={P}/ubuntu/lib/loader PROOT_LOADER_32={P}/ubuntu/lib/loader32 "
+                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs "
+                                f"/bin/bash -c 'link /usr/bin/perl /tmp/lk1; echo LINK_RC=$?; rm -f /tmp/lk1' 2>&1 | tail -2\n"
+                            )
+                            probe_lines.append("run-as link probe:\n" + self.adb.run_as_sh(link_probe)[:300])
                             # 2) Seccomp state: the app process (zygote filter)
                             # vs this run-as shell (no filter).
                             app_pid = self.adb.pid(self.adb.package).split()[0:1]

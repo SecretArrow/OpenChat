@@ -34,8 +34,82 @@
 
 /* ---- legacy path syscalls -> *at(AT_FDCWD, ...) ------------------------ */
 
+/* Hardlink fallback: on some Android seccomp policies / proot builds the
+ * linkat syscall is answered with EACCES/EPERM even though the rest of the
+ * *at() family is allowed. dpkg's backup links ("unable to make backup link
+ * of './usr/bin/perl' before installing new version") only need the file's
+ * content preserved under a second name, so a byte copy is a faithful
+ * substitute that lets package upgrades proceed. Real hardlinks are still
+ * used whenever the kernel permits them — the fallback only engages on
+ * denial, and only for regular files. */
+static int copy_as_link_fallback(const char *oldp, const char *newp) {
+    struct stat st;
+    if (syscall(SYS_newfstatat, AT_FDCWD, oldp, &st, 0) != 0) return -1;
+    if (!S_ISREG(st.st_mode)) { errno = EPERM; return -1; }
+
+    int in = (int)syscall(SYS_openat, AT_FDCWD, oldp, O_RDONLY, 0);
+    if (in < 0) return -1;
+    int out = (int)syscall(SYS_openat, AT_FDCWD, newp,
+                           O_WRONLY | O_CREAT | O_TRUNC, st.st_mode & 0777);
+    if (out < 0) {
+        int saved = errno;
+        syscall(SYS_close, in);
+        errno = saved;
+        return -1;
+    }
+
+    char buf[65536];
+    for (;;) {
+        ssize_t r = syscall(SYS_read, in, buf, sizeof(buf));
+        if (r < 0) goto fail;
+        if (r == 0) break;
+        ssize_t off = 0;
+        while (off < r) {
+            ssize_t w = syscall(SYS_write, out, buf + off, (size_t)(r - off));
+            if (w < 0) goto fail;
+            off += w;
+        }
+    }
+    syscall(SYS_close, in);
+    syscall(SYS_close, out);
+    return 0;
+
+fail: {
+        int saved = errno;
+        syscall(SYS_close, in);
+        syscall(SYS_close, out);
+        syscall(SYS_unlinkat, AT_FDCWD, newp, 0);
+        errno = saved;
+        return -1;
+    }
+}
+
+static int link_denied(int e) {
+    return e == EACCES || e == EPERM || e == ENOSYS || e == EXDEV;
+}
+
 int rename(const char *oldp, const char *newp) {
     return (int)syscall(SYS_renameat, AT_FDCWD, oldp, AT_FDCWD, newp);
+}
+
+int link(const char *oldp, const char *newp) {
+    int r = (int)syscall(SYS_linkat, AT_FDCWD, oldp, AT_FDCWD, newp, 0);
+    if (r != 0 && link_denied(errno)) {
+        int saved = errno;
+        r = copy_as_link_fallback(oldp, newp);
+        if (r != 0) errno = saved;
+    }
+    return r;
+}
+
+int linkat(int olddirfd, const char *oldp, int newdirfd, const char *newp, int flags) {
+    int r = (int)syscall(SYS_linkat, olddirfd, oldp, newdirfd, newp, flags);
+    if (r != 0 && flags == 0 && link_denied(errno)) {
+        int saved = errno;
+        r = copy_as_link_fallback(oldp, newp);
+        if (r != 0) errno = saved;
+    }
+    return r;
 }
 
 int unlink(const char *path) {
@@ -48,10 +122,6 @@ int rmdir(const char *path) {
 
 int mkdir(const char *path, mode_t mode) {
     return (int)syscall(SYS_mkdirat, AT_FDCWD, path, mode);
-}
-
-int link(const char *oldp, const char *newp) {
-    return (int)syscall(SYS_linkat, AT_FDCWD, oldp, AT_FDCWD, newp, 0);
 }
 
 int symlink(const char *target, const char *linkpath) {
