@@ -146,7 +146,7 @@ class ProotRunner(
 
     /**
      * Builds the real proot session/exec spec:
-     * argv = [proot, --kill-on-exit, -0, -w, cwd, -R, rootfs] + cmd,
+     * argv = [proot, --kill-on-exit, -0, -w, cwd, -R, rootfs] + identity binds + cmd,
      * env  = [baseEnv] + caller extras (caller overrides win).
      */
     fun buildSessionSpec(
@@ -164,6 +164,19 @@ class ProotRunner(
             "-R",
             rootfs.absolutePath,
         )
+        // proot -R bind-mounts the HOST's /etc/passwd, /etc/group and
+        // /etc/nsswitch.conf into the guest (its "recommended binds"). On
+        // Android those files lack _apt/sudo/ssh, so every guest NSS lookup
+        // answers from the host database: apt warns "No sandbox user '_apt'"
+        // and dpkg postinsts of sudo and openssh-client die at their
+        // getent/adduser/groupadd steps (verified: run 18, run-as probe shows
+        // host passwd through -R). Later -b arguments override earlier binds,
+        // so re-binding the guest's own files over them restores normal
+        // guest NSS behavior (verified locally: _apt visible, getent RC=0).
+        for (rel in listOf("etc/passwd", "etc/group", "etc/nsswitch.conf")) {
+            argv.add("-b")
+            argv.add("${rootfs.absolutePath}/$rel:/$rel")
+        }
         argv.addAll(cmd)
         val merged = mergeEnv(
             baseEnv(UbuntuFileSystem.prootTmpDir(context).absolutePath, bionicLibDir()),

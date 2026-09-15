@@ -434,6 +434,18 @@ class E2E:
         grab("status-file-exists", self.adb.run_as("ls", "files/data/"))
         grab("rootfs-listing", self.adb.run_as_sh(
             "ls -la files/ubuntu 2>&1; echo ---; du -sm files/ubuntu/rootfs 2>/dev/null | tail -1"))
+        # apt/dpkg write their FULL terminal output inside the rootfs — the
+        # app only surfaces a tail, so this is the authoritative per-package
+        # error record (postinst failures name the exact failing command here).
+        for rel, name in [
+            ("files/ubuntu/rootfs/var/log/apt/term.log", "apt-term-log"),
+            ("files/ubuntu/rootfs/var/log/apt/history.log", "apt-history-log"),
+            ("files/ubuntu/rootfs/var/log/dpkg.log", "dpkg-log"),
+        ]:
+            try:
+                grab(name, self.adb.run_as("cat", rel))
+            except Exception as exc:  # noqa: BLE001 — diagnostics never abort
+                grab(name, f"(grab failed: {exc})")
         self.adb.screenshot(f"diag-{stage}")
         with open(os.path.join(self.out, "logs", "e2e-run.log"), "a") as f:
             f.write(f"\n=== failure @ {stage} {now_iso()} ===\n{self.fail_detail or ''}\n")
@@ -533,6 +545,25 @@ class E2E:
                                 f"/bin/bash -c 'link /usr/bin/perl /tmp/lk1; echo LINK_RC=$?; rm -f /tmp/lk1' 2>&1 | tail -2\n"
                             )
                             probe_lines.append("run-as link probe:\n" + self.adb.run_as_sh(link_probe)[:300])
+                            # 1c) NSS probe: proot -R bind-mounts the HOST's
+                            # /etc/passwd|group|nsswitch.conf into the guest;
+                            # on Android those lack _apt/sudo/ssh, which killed
+                            # getent and the sudo/openssh-client postinsts
+                            # (root cause of run 18). The app now re-binds the
+                            # guest's own identity files over them — replicate
+                            # that EXACT argv here and expect guest entries.
+                            nss_probe = (
+                                f"env -i HOME=/root PATH=/usr/bin:/bin TMPDIR=/tmp PROOT_NO_SECCOMP=1 PROOT_TMP_DIR={P}/ubuntu/tmp "
+                                f"LD_LIBRARY_PATH={P}/ubuntu/lib PROOT_LOADER={P}/ubuntu/lib/loader PROOT_LOADER_32={P}/ubuntu/lib/loader32 "
+                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs "
+                                f"-b {P}/ubuntu/rootfs/etc/passwd:/etc/passwd "
+                                f"-b {P}/ubuntu/rootfs/etc/group:/etc/group "
+                                f"-b {P}/ubuntu/rootfs/etc/nsswitch.conf:/etc/nsswitch.conf "
+                                f"/bin/bash -c 'grep _apt /etc/passwd | head -1; "
+                                f"getent passwd _apt; echo P_RC=$?; getent group sudo; echo G_RC=$?; "
+                                f"ls /sbin/ldconfig* 2>&1; dpkg-divert --list /sbin/ldconfig' 2>&1 | tail -6\n"
+                            )
+                            probe_lines.append("run-as NSS probe (app argv):\n" + self.adb.run_as_sh(nss_probe)[:400])
                             # 2) Seccomp state: the app process (zygote filter)
                             # vs this run-as shell (no filter).
                             app_pid = self.adb.pid(self.adb.package).split()[0:1]

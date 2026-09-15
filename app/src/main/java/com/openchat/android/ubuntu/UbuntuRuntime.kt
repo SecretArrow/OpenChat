@@ -321,6 +321,9 @@ class UbuntuRuntime(
 
         // ---- INSTALLING_PACKAGES (real apt run, streamed to the log) ----
         setState(UbuntuState.INSTALLING_PACKAGES, "Installing base packages (apt)…", 80)
+        if (abi() == "x86_64") {
+            divertLdconfig().getOrElse { return failStep("ldconfig bootstrap failed", it) }
+        }
         runAptUpdate().getOrElse { return failStep("apt-get update failed", it) }
         runChecked(
             "DEBIAN_FRONTEND=noninteractive apt-get install -y " +
@@ -394,6 +397,11 @@ class UbuntuRuntime(
         }
         try {
             setState(UbuntuState.UPDATING, "Updating packages (apt update + upgrade)…", 10)
+            if (abi() == "x86_64") {
+                // An upgrade can ship a new libc-bin whose trigger runs
+                // /sbin/ldconfig — keep the seccomp-proof diversion current.
+                divertLdconfig().getOrElse { return failStep("ldconfig bootstrap failed", it) }
+            }
             runAptUpdate().getOrElse { return failStep("apt-get update failed", it) }
             runChecked("DEBIAN_FRONTEND=noninteractive apt-get -y upgrade")
                 .getOrElse { return failStep("apt-get upgrade failed", it) }
@@ -1053,6 +1061,40 @@ class UbuntuRuntime(
         delay(3000)
         return runChecked(cmd)
     }
+
+    /**
+     * Diverts /sbin/ldconfig to a no-op on x86_64 (idempotent, all states).
+     *
+     * Why: focal's /sbin/ldconfig is a shell wrapper that `exec`s
+     * /sbin/ldconfig.real — a STATIC glibc binary. Static binaries bypass the
+     * guest syscall-compat preload (only the dynamic loader reads
+     * /etc/ld.so.preload), so under the zygote seccomp filter ldconfig.real
+     * hits raw ENOSYS on the legacy syscalls glibc 2.31 still issues and dies
+     * — `ldconfig || ldconfig --verbose` fails twice and the libc-bin
+     * post-installation script fails every apt run (E2E run 18: dpkg error
+     * for libc-bin 3/3 attempts). The cache itself is dispensable in this
+     * containerized rootfs: the dynamic loader falls back to the default
+     * library paths, which hold every library we ship — the same trade
+     * Termux glibc environments make.
+     *
+     * The diversion (not a plain overwrite) is what survives libc-bin
+     * upgrades: dpkg writes the new wrapper to /sbin/ldconfig.distrib and
+     * leaves our no-op in place; without registration dpkg would follow the
+     * symlink and overwrite /bin/true itself. Re-run safely after a repair
+     * re-extract (fresh dpkg DB + leftover .distrib) and on rootfs installed
+     * by older app versions:
+     *  - diversion registered → keep (dpkg writes upgrades to .distrib)
+     *  - not registered → drop any stale .distrib from a pre-diversion run,
+     *    rename the (freshly extracted) wrapper to .distrib, register
+     *  - always refresh the no-op symlink
+     */
+    private suspend fun divertLdconfig(): Result<Unit> = runChecked(
+        "if [ -z \"$(dpkg-divert --list /sbin/ldconfig)\" ]; then " +
+            "rm -f /sbin/ldconfig.distrib; " +
+            "dpkg-divert --local --rename --add /sbin/ldconfig; " +
+            "fi; ln -sf /bin/true /sbin/ldconfig",
+    )
+
 
     private fun failStep(step: String, t: Throwable): Result<Unit> {
         if (t is CancellationException) throw t
