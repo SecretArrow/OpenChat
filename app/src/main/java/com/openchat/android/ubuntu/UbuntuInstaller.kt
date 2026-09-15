@@ -380,8 +380,14 @@ class UbuntuInstaller(private val context: Context) {
          *  (build: scripts/guest-compat/build.sh, source: compat.c). The v2
          *  build adds the hardlink copy-fallback: dpkg backup links get
          *  EACCES under the emulator's seccomp/proot layers even though the
-         *  rest of the *at() family is allowed (E2E run 34936568395). */
+         *  rest of the *at() family is allowed (E2E run 34936568395). The v3
+         *  build adds link-fallback bookkeeping: shadow-utils' lock protocol
+         *  (groupadd/useradd/adduser) verifies lock acquisition with a
+         *  st_nlink==2 check, which a content copy cannot satisfy — the
+         *  stat family now reports nlink 2 for fallback-linked base paths,
+         *  fixing groupadd exit 10 (E2E run 34988589844, proven locally
+         *  with a linkat-blocking seccomp filter: old shim RC=10, new RC=0). */
         const val COMPAT_LIB_SHA256 =
-            "b58324849d4084879109ef3c64ef7528e5ab77e2cb505f947d27d2c6d3497f42"
+            "d700b02fd90775188ce8099ab3ebee225e3bb83f0f10a48aa47b2f32949a55cf"
     }
 }
