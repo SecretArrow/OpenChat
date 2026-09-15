@@ -127,6 +127,23 @@ class Adb:
         for svc in ("wifi", "data"):
             self.shell("svc", svc, state, timeout=30)
 
+    def app_uid(self, pkg: str) -> str:
+        out = self.shell("dumpsys", "package", pkg, timeout=30)
+        m = re.search(r"userId=(\d+)", out)
+        return m.group(1) if m else ""
+
+    def wait_default_network(self, timeout_s: int) -> bool:
+        """Poll until the device reports an active default network again
+        (svc-based restore is asynchronous and can hang on emulated RIL)."""
+        deadline = time.time() + timeout_s
+        while time.time() < deadline:
+            out = self.shell("dumpsys", "connectivity", timeout=30)
+            m = re.search(r"Active default network:\s*(-?\d+)", out)
+            if m and m.group(1) != "-1":
+                return True
+            time.sleep(5)
+        return False
+
     def dump_ui(self) -> str:
         out = self.shell("uiautomator", "dump", "/sdcard/e2e-ui.xml", timeout=45)
         if ("dumped to" not in out) and ("updated" not in out):
@@ -611,10 +628,58 @@ class E2E:
 
                 if busy and screen_off and not net_toggled:
                     net_toggled = True
-                    log("Test F: network drop + restore mid-download")
-                    self.adb.network(False)
+                    log("Test F: network drop + restore mid-download (per-UID iptables)")
+                    # svc wifi/data disable does NOT reliably restore app
+                    # connectivity on the API 30 emulator (the default network
+                    # for the app UID stays gone for minutes while shell still
+                    # routes — E2E evidence run 34932072859), so the drop is
+                    # done per-UID with iptables and the restore is removing
+                    # the rule: deterministic, and a REAL app-visible outage.
+                    uid = self.adb.app_uid(self.adb.package)
+                    dropped = False
+                    if uid:
+                        run(self.adb.base + ["root"], timeout=60)
+                        time.sleep(2)
+                        out = self.adb.shell(
+                            "iptables", "-I", "OUTPUT", "1", "-m", "owner",
+                            "--uid-owner", uid, "-j", "REJECT", timeout=30,
+                        )
+                        listed = self.adb.shell("iptables", "-S", "OUTPUT", timeout=30)
+                        if f"--uid-owner {uid}" in listed:
+                            dropped = True
+                        else:
+                            log(f"iptables block unavailable ({(out or listed).strip()[:120]}); falling back to svc")
+                    if not dropped:
+                        self.adb.network(False)
                     time.sleep(15)
-                    self.adb.network(True)
+                    if dropped:
+                        try:
+                            self.adb.shell(
+                                "iptables", "-D", "OUTPUT", "-m", "owner",
+                                "--uid-owner", uid, "-j", "REJECT", timeout=30,
+                            )
+                        except Exception:  # noqa: BLE001
+                            pass
+                        left = self.adb.shell("iptables", "-S", "OUTPUT", timeout=30)
+                        if f"--uid-owner {uid}" in left:
+                            log("[warn] iptables rule survived delete — forcing cleanup")
+                            try:
+                                self.adb.shell(
+                                    "iptables", "-D", "OUTPUT", "-m", "owner",
+                                    "--uid-owner", uid, "-j", "REJECT", timeout=30,
+                                )
+                            except Exception:  # noqa: BLE001
+                                pass
+                        log("network restored for the app uid (rule removed)")
+                    else:
+                        self.adb.network(True)
+                        if not self.adb.wait_default_network(240):
+                            self.fail(
+                                "LIFECYCLE_INTERFERENCE",
+                                "network did not come back after svc enable — "
+                                "emulator RIL never re-attached, transient-network "
+                                "recovery cannot be verified in this environment",
+                            )
                     time.sleep(3)
 
                 if busy and net_toggled and not force_stopped:

@@ -235,11 +235,16 @@ class UbuntuInstaller(private val context: Context) {
         onLog: (String) -> Unit,
     ): Result<Unit> {
         onLog("apt-get update…")
-        runStep(execStreamFn, "apt-get update").getOrElse { return Result.failure(it) }
+        runStep(execStreamFn, "apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update")
+            .getOrElse { return Result.failure(it) }
         onLog("Installing curl, ca-certificates, xz-utils, git, python3, python3-pip, wget, procps, sudo…")
         runStep(
             execStreamFn,
+            // Acquire::Retries rides out transient connection failures (flaky
+            // mobile networks); per-fetch, so a mirror blip does not kill the
+            // whole install. Genuine errors still fail the step honestly.
             "DEBIAN_FRONTEND=noninteractive apt-get install -y " +
+                "-o Acquire::Retries=3 -o Acquire::http::Timeout=60 " +
                 "curl ca-certificates xz-utils git python3 python3-pip wget procps sudo",
         ).getOrElse { return Result.failure(it) }
         onLog("Base tools installed")
