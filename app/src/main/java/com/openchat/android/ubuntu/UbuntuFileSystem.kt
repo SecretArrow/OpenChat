@@ -1,6 +1,7 @@
 package com.openchat.android.ubuntu
 
 import android.content.Context
+import android.os.Build
 import java.io.File
 
 /**
@@ -9,7 +10,10 @@ import java.io.File
  *
  * Layout under the app's private storage (`context.filesDir`):
  *  - `ubuntu/rootfs`  — extracted Ubuntu base rootfs (bash, apt, /root/workspaces…)
- *  - `ubuntu/bin/proot` — static proot binary downloaded per ABI
+ *  - `ubuntu/bin/proot` — proot binary (bionic bundle from APK assets on
+ *                         x86_64, hash-pinned download on other ABIs)
+ *  - `ubuntu/lib`     — proot support files for the bionic build: ptrace
+ *                       loader, loader32, libtalloc.so.2, libandroid-shmem.so
  *  - `ubuntu/cache`   — downloaded tarballs (reused by Repair)
  *  - `ubuntu/tmp`     — PROOT_TMP_DIR: proot's own scratch space (glue rootfs,
  *                       temporary files). /tmp is not writable for apps on
@@ -21,6 +25,13 @@ object UbuntuFileSystem {
     fun rootfsDir(context: Context): File = File(context.filesDir, "ubuntu/rootfs")
 
     fun prootBin(context: Context): File = File(context.filesDir, "ubuntu/bin/proot")
+
+    /**
+     * Support files for the bionic (Termux-built) proot used on x86_64: the
+     * ptrace loader, loader32, libtalloc.so.2 and libandroid-shmem.so. All
+     * copied from APK assets by [ProotRunner] with SHA-256 verification.
+     */
+    fun prootLibDir(context: Context): File = File(context.filesDir, "ubuntu/lib")
 
     fun cacheDir(context: Context): File = File(context.filesDir, "ubuntu/cache")
 
@@ -38,6 +49,19 @@ object UbuntuFileSystem {
 
     /** Where all workspace directories live inside the rootfs. */
     fun workspaceRoot(rootfs: File): File = File(rootfs, "root/workspaces")
+
+    /**
+     * True when the proot binary is complete for the device ABI. The bionic
+     * x86_64 build additionally needs libtalloc and the loader (its DT_NEEDED
+     * entries); the static glibc builds on other ABIs are single files. A
+     * persisted READY without these files is not "ready" (§ no fake ready).
+     */
+    fun prootComplete(context: Context): Boolean {
+        if (!prootBin(context).isFile) return false
+        if (Build.SUPPORTED_ABIS[0] != "x86_64") return true
+        val lib = prootLibDir(context)
+        return File(lib, "libtalloc.so.2").isFile && File(lib, "loader").isFile
+    }
 
     /**
      * True when a usable rootfs exists on disk (bash is present) — the gate

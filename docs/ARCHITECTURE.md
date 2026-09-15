@@ -8,7 +8,8 @@ Open Chat
 ├── Ubuntu Userspace (ubuntu/)
 │   ├── RootfsCatalog      pinned Ubuntu Base URLs + SHA256
 │   ├── UbuntuInstaller    download → verify → extract → configure → apt → node
-│   ├── ProotRunner        proot argv/session builder (per-ABI static proot)
+│   ├── ProotRunner        proot argv/session builder (bionic bundle on x86_64,
+│   │                      pinned static download on arm64/armhf)
 │   ├── UbuntuRuntime      state machine, exec / execStream / sessions
 │   ├── UbuntuFileSystem   path mapping + traversal protection
 │   └── UbuntuProcessManager

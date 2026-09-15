@@ -126,7 +126,7 @@ class UbuntuRuntime(
     fun isReady(): Boolean =
         _status.value.state == UbuntuState.READY &&
             File(rootfsDir(), "bin/bash").exists() &&
-            UbuntuFileSystem.prootBin(context).exists()
+            UbuntuFileSystem.prootComplete(context)
 
     /**
      * True when a usable rootfs exists on disk regardless of the persisted
@@ -745,9 +745,12 @@ class UbuntuRuntime(
         )
         if (bin.isFile && bin.canExecute()) {
             try {
-                val p = ProcessBuilder(bin.absolutePath, "--version")
-                    .redirectErrorStream(true)
-                    .start()
+                // The bionic x86_64 build resolves libtalloc from our lib dir —
+                // the app process env does not carry it, so add it explicitly.
+                val pb = ProcessBuilder(bin.absolutePath, "--version")
+                pb.environment().putAll(proot.hostEnvExtras())
+                pb.redirectErrorStream(true)
+                val p = pb.start()
                 val ver = p.inputStream.bufferedReader().use { it.readText().trim().lineSequence().firstOrNull() ?: "" }
                 p.waitFor(10, TimeUnit.SECONDS)
                 out.add("proot --version: $ver (exit ${p.exitValue()})")

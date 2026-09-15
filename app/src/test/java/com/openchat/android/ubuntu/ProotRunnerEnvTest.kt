@@ -53,4 +53,51 @@ class ProotRunnerEnvTest {
         val merged = ProotRunner.mergeEnv(base, emptyMap())
         assertEquals(base, merged)
     }
+
+    @Test
+    fun `bionic env adds lib path and ptrace loaders`() {
+        val env = ProotRunner.baseEnv(
+            "/data/user/0/com.openchat.android/files/ubuntu/tmp",
+            "/data/user/0/com.openchat.android/files/ubuntu/lib",
+        )
+
+        // libtalloc + libandroid-shmem live here (bionic x86_64 build).
+        assertEquals(
+            "/data/user/0/com.openchat.android/files/ubuntu/lib",
+            env["LD_LIBRARY_PATH"],
+        )
+        // Termux's fallback loader paths point at the Termux prefix, which
+        // does not exist in this app — the loaders MUST be pointed explicitly.
+        assertEquals(
+            "/data/user/0/com.openchat.android/files/ubuntu/lib/loader",
+            env["PROOT_LOADER"],
+        )
+        assertEquals(
+            "/data/user/0/com.openchat.android/files/ubuntu/lib/loader32",
+            env["PROOT_LOADER_32"],
+        )
+
+        // Base keys survive.
+        assertEquals("/tmp", env["TMPDIR"])
+        assertEquals("1", env["PROOT_NO_SECCOMP"])
+    }
+
+    @Test
+    fun `static-build env has no host lib keys`() {
+        val env = ProotRunner.baseEnv("/w", null)
+        assertTrue(!env.containsKey("LD_LIBRARY_PATH"))
+        assertTrue(!env.containsKey("PROOT_LOADER"))
+        assertTrue(!env.containsKey("PROOT_LOADER_32"))
+    }
+
+    @Test
+    fun `bionicEnvExtras is empty without a lib dir and consistent with baseEnv`() {
+        assertTrue(ProotRunner.bionicEnvExtras(null).isEmpty())
+
+        val extras = ProotRunner.bionicEnvExtras("/data/lib")
+        val env = ProotRunner.baseEnv("/w", "/data/lib")
+        for ((k, v) in extras) {
+            assertEquals(v, env[k])
+        }
+    }
 }

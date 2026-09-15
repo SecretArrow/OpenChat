@@ -501,6 +501,7 @@ class E2E:
                                 f"env -i HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/node/bin "
                                 f"TERM=xterm-256color LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive TMPDIR=/tmp "
                                 f"PROOT_NO_SECCOMP=1 PROOT_TMP_DIR={P}/ubuntu/tmp "
+                                f"LD_LIBRARY_PATH={P}/ubuntu/lib PROOT_LOADER={P}/ubuntu/lib/loader PROOT_LOADER_32={P}/ubuntu/lib/loader32 "
                                 f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs "
                                 f"/bin/bash -c 'apt-get update' 2>&1 | tail -3; echo ENVI_RC=$?\n"
                             )
@@ -750,6 +751,18 @@ class E2E:
         self.stages["ROOTFS_VERIFY"].pass_(
             f"all {len(checks)} paths present via run-as; rootfs size {mb} MB")
 
+    def bionic_exports(self) -> str:
+        """Env the app's baseEnv carries for the bionic x86_64 proot:
+        LD_LIBRARY_PATH (libtalloc + libandroid-shmem) and the external ptrace
+        loaders. run-as probes exec the same binary the app uses, so they must
+        set the same vars or proot cannot start at all."""
+        files = f"/data/data/{self.adb.package}/files"
+        return (
+            f"export LD_LIBRARY_PATH={files}/ubuntu/lib\n"
+            f"export PROOT_LOADER={files}/ubuntu/lib/loader\n"
+            f"export PROOT_LOADER_32={files}/ubuntu/lib/loader32\n"
+        )
+
     def inroot_env(self) -> str:
         pkg = self.adb.package
         files = f"/data/data/{pkg}/files"
@@ -757,7 +770,8 @@ class E2E:
             f"export HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/node/bin "
             f"TERM=xterm-256color LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive TMPDIR=/tmp PROOT_NO_SECCOMP=1 "
             f"PROOT_TMP_DIR={files}/ubuntu/tmp\n"
-            f"exec {files}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {files}/ubuntu/rootfs /bin/bash -c\n"
+            + self.bionic_exports()
+            + f"exec {files}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {files}/ubuntu/rootfs /bin/bash -c\n"
         )
 
     def inroot_raw(self, body: str, timeout: int = 180) -> str:
@@ -769,7 +783,8 @@ class E2E:
             f"export HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/node/bin "
             f"TERM=xterm-256color LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive TMPDIR=/tmp PROOT_NO_SECCOMP=1\n"
             f"export PROOT_TMP_DIR={files}/ubuntu/tmp\n"
-            f"{body}\n"
+            + self.bionic_exports()
+            + f"{body}\n"
             f"echo INROOT_RC=$?\n"
         )
         return self.adb.inroot(script, timeout=timeout)
@@ -781,7 +796,8 @@ class E2E:
             f"export HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/node/bin "
             f"TERM=xterm-256color LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive TMPDIR=/tmp PROOT_NO_SECCOMP=1\n"
             f"export PROOT_TMP_DIR={files}/ubuntu/tmp\n"
-            f"exec {files}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {files}/ubuntu/rootfs /bin/bash -c\n"
+            + self.bionic_exports()
+            + f"exec {files}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {files}/ubuntu/rootfs /bin/bash -c\n"
             f"\"{cmd}\"\n"
         )
         return self.adb.inroot(script, timeout=timeout)

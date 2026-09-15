@@ -31,3 +31,4 @@ secrets.properties
 *.log
 failed_logs*.txt
 autofix_result.txt
+__pycache__/

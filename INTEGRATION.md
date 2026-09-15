@@ -175,10 +175,18 @@ data class SessionSpec(val argv: List<String>, val cwd: String, val env: Map<Str
 // proot exit-255 failure mapping (mapProotFailure): temp-dir errors → repair hint,
 //   ENOSPC → storage guidance, "Exec format error" → wrong-arch archive, generic
 //   "proot error" → honest detail + repair suggestions. Guest command failures keep their code.
-// proot binary: <filesDir>/ubuntu/bin/proot downloaded per-ABI from (REAL hashes):
+// proot binary: <filesDir>/ubuntu/bin/proot —
+//   x86_64: BIONIC build shipped as APK assets (app/src/main/assets/ubuntu/proot/x86_64/):
+//     proot (Termux package proot 5.1.107.92 — proot-me master snapshot, NDK r29, min API 24)
+//     + loader/loader32 (external ptrace loaders, PROOT_LOADER/PROOT_LOADER_32)
+//     + libtalloc.so.2 (2.4.3) + libandroid-shmem.so (0.7) on LD_LIBRARY_PATH.
+//     All copied to filesDir/ubuntu/{bin,lib} with pinned SHA-256 at runtime.
+//     WHY: static glibc proot builds die SIGSYS/exit 159 under the emulator's
+//     zygote seccomp allowlist (faccessat2 in 5.3.0, glibc.pthread.rseq startup
+//     registration in 5.4.1); bionic makes no such syscalls. Real devices keep
+//     the static builds — arm64 5.3.0 verified working (no rseq in binary).
 //   aarch64: https://github.com/proot-me/proot/releases/download/v5.3.0/proot-v5.3.0-aarch64-static  sha256 fa10b1a7818c2f5b1dcb5834450570c368c9ecf66d31521509621b95c4538a45
 //   arm:     https://github.com/proot-me/proot/releases/download/v5.3.0/proot-v5.3.0-arm-static      sha256 bf186a37c7a19621e5bf3cfdf6bce54bfa2e220f91eb7196318e699ac174cc69
-//   x86_64:  https://github.com/proot-me/proot/releases/download/v5.3.0/proot-v5.3.0-x86_64-static   sha256 d1eb20cb201e6df08d707023efb000623ff7c10d6574839d7bb42d0adba6b4da
 
 // ubuntu/UbuntuInstaller.kt
 class UbuntuInstaller(context, runtime refs..., onEvent: (UbuntuState, String, Int) -> Unit) {
@@ -195,6 +203,8 @@ class UbuntuInstaller(context, runtime refs..., onEvent: (UbuntuState, String, I
 object UbuntuFileSystem {
     fun rootfsDir(context: Context): File        // <filesDir>/ubuntu/rootfs
     fun prootBin(context: Context): File         // <filesDir>/ubuntu/bin/proot
+    fun prootLibDir(context: Context): File      // <filesDir>/ubuntu/lib (bionic x86_64: loader, loader32, libtalloc.so.2, libandroid-shmem.so)
+    fun prootComplete(context: Context): Boolean // bin (+ libtalloc/loader on x86_64) — a persisted READY without files is not ready
     fun cacheDir(context: Context): File
     fun workspaceRoot(rootfs: File): File        // <rootfs>/root/workspaces
     fun safeResolve(root: File, rel: String): Result<File>  // anti path-traversal (§23)
