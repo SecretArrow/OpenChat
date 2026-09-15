@@ -1,6 +1,7 @@
 package com.openchat.android.ubuntu
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import com.openchat.android.core.net.Http
 import com.openchat.android.core.util.Errors
@@ -161,11 +162,61 @@ class UbuntuInstaller(private val context: Context) {
             File(etc, "resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
             File(etc, "hosts").writeText("127.0.0.1 localhost\n")
             AptSources.writeFor(File(etc, "apt"), arch, variant.codename).getOrThrow()
+            installSyscallCompat(rootfs)
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(
                 ErrorInfoException(Errors.ubuntuFailure("Rootfs configuration failed: ${e.message ?: e.javaClass.simpleName}")),
             )
+        }
+    }
+
+    /**
+     * Public wrapper for the import path ([UbuntuRuntime.import] re-asserts
+     * the host-side config on the swapped-in rootfs). Same idempotent,
+     * hash-pinned install as [configure]; device-ABI gated internally.
+     */
+    fun installSyscallCompatForImport(rootfs: File) = installSyscallCompat(rootfs)
+
+    /**
+     * Installs the guest syscall-compat preload into the rootfs (x86_64
+     * devices only): Android's zygote seccomp policy answers the legacy file
+     * syscalls (rename, unlink, mkdir, stat, …) with ENOSYS — bionic never
+     * issues them, but glibc still does, so apt/dpkg fail with
+     * "rename failed: Function not implemented" (errno 38) inside proot.
+     * (arm64 has no legacy rename at all — real arm64 devices are unaffected.)
+     * The tiny preload library re-implements the legacy wrappers on top of
+     * the *at() syscalls bionic itself uses, and /etc/ld.so.preload activates
+     * it for every dynamic guest process.
+     *
+     * Idempotent: the library is re-copied when its hash differs, the
+     * preload line is appended only when missing. The copy is verified
+     * against the pinned SHA-256 (same trust rule as every other artifact).
+     */
+    private fun installSyscallCompat(rootfs: File) {
+        if (Build.SUPPORTED_ABIS[0] != "x86_64") return
+        val libDir = File(rootfs, "usr/local/lib").apply { mkdirs() }
+        val lib = File(libDir, "libopenchat_compat.so")
+        if (!lib.isFile || !Checksums.sha256(lib).equals(COMPAT_LIB_SHA256, ignoreCase = true)) {
+            context.assets.open("ubuntu/compat/x86_64/libopenchat_compat.so").use { ins ->
+                if (lib.exists()) lib.delete()
+                FileOutputStream(lib).use { fos -> ins.copyTo(fos, 64 * 1024) }
+            }
+            val actual = Checksums.sha256(lib)
+            if (!actual.equals(COMPAT_LIB_SHA256, ignoreCase = true)) {
+                lib.delete()
+                throw IOException(
+                    "syscall-compat preload SHA-256 mismatch — expected $COMPAT_LIB_SHA256, got $actual",
+                )
+            }
+            lib.setReadable(true, false)
+            lib.setWritable(false, false)
+        }
+        val preload = File(rootfs, "etc/ld.so.preload")
+        val line = "/usr/local/lib/libopenchat_compat.so"
+        val existing = if (preload.isFile) preload.readText() else ""
+        if (existing.lineSequence().none { it.trim() == line }) {
+            preload.writeText(if (existing.isBlank()) "$line\n" else existing.trimEnd() + "\n$line\n")
         }
     }
 
@@ -319,5 +370,10 @@ class UbuntuInstaller(private val context: Context) {
     private companion object {
         const val TAG = "OpenChat/Installer"
         const val NODE_VERSION = "v20.18.1"
+
+        /** Pinned SHA-256 of assets/ubuntu/compat/x86_64/libopenchat_compat.so
+         *  (build: scripts/guest-compat/build.sh, source: compat.c). */
+        const val COMPAT_LIB_SHA256 =
+            "50929e9834ecc23d209134cb5bbdc05d643f5b5433fd3527d400d724c090c492"
     }
 }

@@ -188,6 +188,16 @@ data class SessionSpec(val argv: List<String>, val cwd: String, val env: Map<Str
 //   aarch64: https://github.com/proot-me/proot/releases/download/v5.3.0/proot-v5.3.0-aarch64-static  sha256 fa10b1a7818c2f5b1dcb5834450570c368c9ecf66d31521509621b95c4538a45
 //   arm:     https://github.com/proot-me/proot/releases/download/v5.3.0/proot-v5.3.0-arm-static      sha256 bf186a37c7a19621e5bf3cfdf6bce54bfa2e220f91eb7196318e699ac174cc69
 
+// guest syscall-compat (x86_64 DEVICES): assets/ubuntu/compat/x86_64/libopenchat_compat.so
+//   (source scripts/guest-compat/compat.c, gcc -O2 -fPIC -shared; SHA-256 pinned in
+//    UbuntuInstaller.COMPAT_LIB_SHA256). Android's zygote seccomp policy answers the
+//    legacy file syscalls (rename/unlink/mkdir/stat/utimes/...) with ENOSYS — bionic
+//    never issues them, glibc on x86_64 still does (apt: "rename failed, Function not
+//    implemented", errno 38). arm64 has no legacy rename, so real arm64 devices are
+//    unaffected. Copied into <rootfs>/usr/local/lib/ and activated via
+//    <rootfs>/etc/ld.so.preload by UbuntuInstaller.configure() and the import path.
+//    Idempotent; the copy is hash-verified before use.
+
 // ubuntu/UbuntuInstaller.kt
 class UbuntuInstaller(context, runtime refs..., onEvent: (UbuntuState, String, Int) -> Unit) {
     suspend fun downloadAndVerify(url: String, sha256: String, onProgress: (Long, Long) -> Unit): Result<File> // OkHttp stream → filesDir/ubuntu/cache/

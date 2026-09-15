@@ -540,6 +540,10 @@ class UbuntuRuntime(
                 val etc = File(rootfs, "etc").apply { mkdirs() }
                 File(etc, "resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
                 File(etc, "hosts").writeText("127.0.0.1 localhost\n")
+                // Imported userspaces on x86_64 devices need the seccomp
+                // syscall-compat preload just like a fresh install does
+                // (legacy glibc file syscalls get ENOSYS under the app filter).
+                installer.installSyscallCompatForImport(rootfs)
             }
 
             setState(UbuntuState.IMPORTING, "Running smoke test…", 95)
