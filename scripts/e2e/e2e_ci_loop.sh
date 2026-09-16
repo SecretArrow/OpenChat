@@ -4,12 +4,19 @@
 #
 # Env: MAX_REPAIR (default 2), E2E_TIMEOUT (default 2700), E2E_CLEAN ("true"),
 #      E2E_APK (glob), MAX_ATTEMPT_LOG for the rerun count.
-set -u
+# pipefail is MANDATORY: the driver's exit status rides a `| tee` pipeline —
+# without it tee's RC (0) masks a failed attempt and the loop reports a false
+# PASS without ever running a repair cycle.
+set -uo pipefail
 MAX="${MAX_REPAIR:-2}"
 TIMEOUT="${E2E_TIMEOUT:-2700}"
 APK="${E2E_APK:-app/build/outputs/apk/debug/OpenChat-x86_64-debug.apk}"
 CLEAN=""
 [ "${E2E_CLEAN:-true}" = "true" ] && CLEAN="--clean"
+
+# tee -a target must exist from attempt 0 on, or the log (and autofix input)
+# is silently lost.
+mkdir -p e2e-artifacts/logs
 
 attempt=0
 ok=0

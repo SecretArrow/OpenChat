@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import re
 import subprocess
 import sys
@@ -869,17 +870,6 @@ class E2E:
             f"export PROOT_LOADER_32={files}/ubuntu/lib/loader32\n"
         )
 
-    def inroot_env(self) -> str:
-        pkg = self.adb.package
-        files = f"/data/data/{pkg}/files"
-        return (
-            f"export HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/node/bin "
-            f"TERM=xterm-256color LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive TMPDIR=/tmp PROOT_NO_SECCOMP=1 "
-            f"PROOT_TMP_DIR={files}/ubuntu/tmp\n"
-            + self.bionic_exports()
-            + f"exec {files}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {files}/ubuntu/rootfs /bin/bash -c\n"
-        )
-
     def inroot_raw(self, body: str, timeout: int = 180) -> str:
         """Run a multi-line in-rootfs script: proot WITHOUT exec (so the outer
         sh can report the real exit code) + stderr merged."""
@@ -903,8 +893,11 @@ class E2E:
             f"TERM=xterm-256color LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive TMPDIR=/tmp PROOT_NO_SECCOMP=1\n"
             f"export PROOT_TMP_DIR={files}/ubuntu/tmp\n"
             + self.bionic_exports()
-            + f"exec {files}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {files}/ubuntu/rootfs /bin/bash -c\n"
-            f"\"{cmd}\"\n"
+            # -c and the command MUST share one line: run-as feeds this script to
+            # sh via stdin, so a newline after -c would exec bash with no
+            # argument ("-c: option requires an argument"). shlex.quote keeps
+            # the full command a single argv element and inert to the outer sh.
+            + f"exec {files}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {files}/ubuntu/rootfs /bin/bash -c {shlex.quote(cmd)}\n"
         )
         return self.adb.inroot(script, timeout=timeout)
 
