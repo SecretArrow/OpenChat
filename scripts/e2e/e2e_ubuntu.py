@@ -947,27 +947,46 @@ class E2E:
                       "\ninspect /etc/resolv.conf, proot config, device network")
 
     def phase_terminal_ui(self) -> None:
-        """Terminal UI: the buffer renders via Canvas (invisible to
-        uiautomator), so this stage is a visual + liveness check — the
-        AUTHORITATIVE command verification ran in phase_ubuntu via the same
-        rootfs+proot the terminal session uses."""
+        """Terminal UI: the buffer renders via Canvas AND the input is an
+        alpha(0) 1dp BasicTextField (invisible IME capture) — BOTH are
+        invisible to uiautomator, so an EditText-class probe false-fails a
+        demonstrably working terminal (run 35057072729: prompt visible,
+        keyboard open, yet 'input field not present'). Honest checks instead:
+        (1) the active-session chrome is real Compose text (session chip,
+        extra keys, copy/paste) and absent on the 'Starting shell…' spinner;
+        (2) FUNCTIONAL input proof — type `touch` through the IME field into
+        the PTY and verify the file appears inside the rootfs via the same
+        inroot path used by the other stages."""
         if not find_tap(self.adb, ["terminal"], scroll=False):
             self.fail("TERMINAL_UI", "could not open the Terminal tab")
         time.sleep(8)
         shot = self.adb.screenshot("04-terminal")
         nodes = parse_ui(self.adb.dump_ui())
-        has_input = any("EditText" in n["cls"] for n in nodes)
+        blob = " ".join(f"{n['text']} {n['desc']}" for n in nodes).lower()
         crashed = self.app_crash_in_logcat()
         if crashed:
             self.fail("TERMINAL_UI", f"terminal crashed:\n{crashed[:800]}")
-        if not has_input:
-            self.fail("TERMINAL_UI", "terminal input field not present (see screenshot)")
-        self.adb.type_text("echo E2E_TERMINAL_OK")
+        session_ui = [w for w in ("esc", "ctrl", "ubuntu shell", "copy", "paste") if w in blob]
+        if len(session_ui) < 2:  # one re-dump in case the session boots slowly
+            time.sleep(6)
+            nodes = parse_ui(self.adb.dump_ui())
+            blob = " ".join(f"{n['text']} {n['desc']}" for n in nodes).lower()
+            session_ui = [w for w in ("esc", "ctrl", "ubuntu shell", "copy", "paste") if w in blob]
+        if len(session_ui) < 2:
+            self.fail("TERMINAL_UI",
+                      f"terminal session UI not composed (spinner or blank?): {blob[:300]}")
+        self.adb.type_text("touch /tmp/e2e-terminal-typed")
         self.adb.keyevent(66)
         time.sleep(3)
         self.adb.screenshot("05-terminal-after-echo")
+        typed = self.inroot_cmd("test -f /tmp/e2e-terminal-typed && echo TYPED_OK")
+        if "TYPED_OK" not in typed:
+            self.fail("TERMINAL_UI",
+                      f"typed command never executed inside the rootfs "
+                      f"(IME→PTY→bash broken?):\n{typed[:400]}")
         self.stages["TERMINAL_UI"].pass_(
-            f"terminal session live, input present, echo typed; screenshots: {shot}, 05-terminal-after-echo")
+            f"session UI composed ({','.join(session_ui)}); typed `touch` executed in-rootfs "
+            f"(IME→PTY→bash proven); screenshots: {shot}, 05-terminal-after-echo")
 
     def phase_persistence(self) -> None:
         """Write a file inside Ubuntu, force-stop the APP, relaunch, verify
