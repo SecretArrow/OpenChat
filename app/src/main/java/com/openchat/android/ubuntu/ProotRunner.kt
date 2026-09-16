@@ -39,23 +39,29 @@ internal fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
  * and builds the real proot argv/env.
  *
  * ABI policy:
- *  - x86_64: **bionic proot** (Termux build, proot-me master snapshot, NDK)
- *    copied from APK assets with pinned SHA-256. Static glibc proot builds
- *    (5.3.0 and 5.4.1 alike) die with SIGSYS (exit 159) on Android emulators:
- *    their modern libc makes syscalls at startup (faccessat2, rseq — the
- *    5.4.1 binary literally contains "glibc.pthread.rseq") that the zygote
- *    seccomp allowlist answers with SIGKILL_THREAD, while the identical
- *    binary+rootfs+env runs perfectly outside the filter (run-as: apt fetches
- *    27.3 MB, RC=0). Bionic never issues those syscalls; this is the same
- *    binary proot-distro uses on Android every day. Support files (ptrace
- *    loader, loader32, libtalloc.so.2, libandroid-shmem.so) ship alongside.
- *  - arm64/armhf: static glibc builds from proot-me releases (hash-pinned
- *    download) — verified working on real devices; 5.3.0-aarch64 contains no
- *    rseq and modern platform policies allow the rest.
+ *  - x86_64 AND arm64-v8a: **bionic proot** (Termux build, proot-me master
+ *    snapshot, NDK r29, min API 24) copied from APK assets with pinned
+ *    SHA-256. Static glibc proot builds (5.3.0 and 5.4.1 alike) die with
+ *    SIGSYS (exit 159) under Android's zygote seccomp allowlist — proven on
+ *    the emulator (x86_64) and reported on real arm64 devices (vendor kernels
+ *    enforce the same policy; the app surfaced it as "no known proot
+ *    signature"/exit 159 with an empty tail). Their modern libc issues
+ *    syscalls at startup (faccessat2, rseq — the 5.4.1 binary literally
+ *    contains "glibc.pthread.rseq") that the filter kills or answers with
+ *    ENOSYS, while the identical binary+rootfs+env runs perfectly outside
+ *    the filter. Bionic never issues those syscalls; this is the same binary
+ *    proot-distro uses on Android every day. Support files (ptrace loader,
+ *    loader32, libtalloc.so.2, libandroid-shmem.so) ship alongside per ABI.
+ *  - armhf (armeabi-v7a primary): static glibc build from proot-me releases
+ *    (hash-pinned download) — legacy 32-bit devices, unchanged.
  *  - `prootUrlOverride` (advanced settings) still replaces the main binary on
- *    any ABI (SHA check skipped, warning logged) — the x86_64 support files
+ *    any ABI (SHA check skipped, warning logged) — the bionic support files
  *    are installed from assets either way and simply go unused by a static
  *    override build.
+ *  - Readiness is hash-based: a binary whose SHA-256 does not match the
+ *    current ABI's pin (e.g. an old static build left by a previous app
+ *    version) is replaced by the pinned bundle on the next ensureProot —
+ *    upgrading installs self-heal instead of keeping a possibly-broken proot.
  */
 class ProotRunner(
     private val context: Context,
@@ -63,35 +69,49 @@ class ProotRunner(
 ) {
 
     /**
-     * Ensures the proot binary (and, on x86_64, its bionic support files)
-     * exists and is executable. x86_64 installs from APK assets; other ABIs
-     * download from the pinned release (or the user's `prootUrlOverride` —
-     * in that case the SHA-256 check is skipped and a warning is logged).
+     * Ensures the proot binary (and, on bionic ABIs, its support files)
+     * exists, matches this app version's pins, and is executable. Bionic ABIs
+     * (x86_64, arm64-v8a) install from APK assets; armhf downloads from the
+     * pinned release (or the user's `prootUrlOverride` — in that case the
+     * SHA-256 check is skipped and a warning is logged).
      */
     suspend fun ensureProot(): Result<File> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val bin = UbuntuFileSystem.prootBin(context)
-        if (UbuntuFileSystem.prootComplete(context) && bin.canExecute()) {
-            return@withContext Result.success(bin)
-        }
-
         val abi = Build.SUPPORTED_ABIS[0]
         val override = settings.settings.value.prootUrlOverride
 
-        if (abi == "x86_64") {
-            installBionicProot(bin).getOrElse { return@withContext Result.failure(it) }
+        // Hash-based readiness: the binary must match THIS app version's pin
+        // for the ABI (plus, on bionic ABIs, the support files with theirs).
+        // A leftover binary from an older app version (different hash) is
+        // replaced below — this is what migrates v0.1.10/11 static installs
+        // onto the bionic build without a manual Reset.
+        if (bionicBundleFor(abi) != null) {
+            if (bionicBundleReady(abi, bin)) return@withContext Result.success(bin)
+        } else if (bin.isFile && bin.canExecute() &&
+            Checksums.sha256(bin).equals(PROOT_ARM_SHA256, ignoreCase = true)
+        ) {
+            return@withContext Result.success(bin)
+        }
+
+        if (bionicBundleFor(abi) != null) {
+            installBionicProot(bin, abi).getOrElse { return@withContext Result.failure(it) }
             if (override == null) return@withContext Result.success(bin)
             // Override set: the download below replaces the asset binary.
         }
 
-        val (url, sha) = when (abi) {
-            "arm64-v8a" -> PROOT_AARCH64_URL to PROOT_AARCH64_SHA256
-            "armeabi-v7a" -> PROOT_ARM_URL to PROOT_ARM_SHA256
-            "x86_64" -> override!! to PROOT_X86_64_SHA256
-            else -> return@withContext Result.failure(
+        if (bionicBundleFor(abi) == null && abi != "armeabi-v7a") {
+            return@withContext Result.failure(
                 ErrorInfoException(
                     Errors.ubuntuFailure("Unsupported ABI for proot: '$abi' — this APK supports arm64-v8a, armeabi-v7a, x86_64"),
                 ),
             )
+        }
+
+        // Reached only for the static armhf build, or when an explicit
+        // prootUrlOverride replaces the bionic asset binary.
+        val (url, sha) = when (abi) {
+            "armeabi-v7a" -> PROOT_ARM_URL to PROOT_ARM_SHA256
+            else -> override!! to bionicBundleFor(abi)!!.prootSha
         }
         val verify = override == null
         if (!verify) {
@@ -192,13 +212,64 @@ class ProotRunner(
      */
     fun hostEnvExtras(): Map<String, String> = bionicEnvExtras(bionicLibDir())
 
-    /** Lib dir passed to [baseEnv] for the bionic build, null elsewhere. */
+    /** Lib dir passed to [baseEnv] for the bionic builds, null elsewhere. */
     private fun bionicLibDir(): String? =
-        if (Build.SUPPORTED_ABIS[0] == "x86_64") {
+        if (bionicBundleFor(Build.SUPPORTED_ABIS[0]) != null) {
             UbuntuFileSystem.prootLibDir(context).absolutePath
         } else {
             null
         }
+
+    /**
+     * One bionic proot bundle per supported ABI: the APK-asset directory and
+     * the pinned SHA-256 of every shipped file. Pure data — JVM-testable.
+     */
+    data class BionicBundle(
+        val assetDir: String,
+        val prootSha: String,
+        val loaderSha: String,
+        val loader32Sha: String,
+        val tallocSha: String,
+        val shmemSha: String,
+    )
+
+    /** The bundle for [abi], or null when the ABI uses the static download. */
+    fun bionicBundleFor(abi: String): BionicBundle? = when (abi) {
+        "x86_64" -> BIONIC_X86_64
+        "arm64-v8a" -> BIONIC_ARM64
+        else -> null
+    }
+
+    /**
+     * True when the on-disk bundle for [abi] is complete AND every file's
+     * SHA-256 matches this app version's pins. Anything else (missing file,
+     * stale binary from an older app version, corruption) reports false and
+     * gets reinstalled by [installBionicProot].
+     */
+    fun bionicBundleReady(abi: String, bin: File): Boolean {
+        val bundle = bionicBundleFor(abi) ?: return false
+        // bin = <files>/ubuntu/bin/proot → lib dir = <files>/ubuntu/lib
+        // (mirrors UbuntuFileSystem.prootLibDir without needing a Context).
+        val libDir = bin.parentFile?.parentFile?.let { File(it, "lib") }
+            ?: return false
+        val expected = mapOf(
+            bin.absolutePath to bundle.prootSha,
+            File(libDir, "loader").absolutePath to bundle.loaderSha,
+            File(libDir, "loader32").absolutePath to bundle.loader32Sha,
+            File(libDir, "libtalloc.so.2").absolutePath to bundle.tallocSha,
+            File(libDir, "libandroid-shmem.so").absolutePath to bundle.shmemSha,
+        )
+        for ((path, sha) in expected) {
+            val f = File(path)
+            val needsExec = path == bin.absolutePath ||
+                path.endsWith("/loader") || path.endsWith("/loader32")
+            if (!f.isFile || (needsExec && !f.canExecute())) {
+                return false
+            }
+            if (!Checksums.sha256(f).equals(sha, ignoreCase = true)) return false
+        }
+        return true
+    }
 
     /**
      * Copies the bionic proot bundle (binary, ptrace loader, loader32,
@@ -208,21 +279,25 @@ class ProotRunner(
      * downloaded rootfs). Files already present with the correct hash are kept
      * (idempotent, cheap re-runs for Repair).
      */
-    private fun installBionicProot(bin: File): Result<Unit> {
+    private fun installBionicProot(bin: File, abi: String): Result<Unit> {
+        val bundle = bionicBundleFor(abi)
+            ?: return Result.failure(
+                ErrorInfoException(Errors.ubuntuFailure("no bionic proot bundle for ABI '$abi'")),
+            )
         val libDir = UbuntuFileSystem.prootLibDir(context)
         libDir.mkdirs()
         bin.parentFile?.mkdirs()
         val plan = listOf(
-            Triple("proot", bin, PROOT_X86_64_SHA256),
-            Triple("loader", File(libDir, "loader"), PROOT_LOADER_SHA256),
-            Triple("loader32", File(libDir, "loader32"), PROOT_LOADER32_SHA256),
-            Triple("libtalloc.so.2", File(libDir, "libtalloc.so.2"), PROOT_LIBTALLOC_SHA256),
-            Triple("libandroid-shmem.so", File(libDir, "libandroid-shmem.so"), PROOT_LIBSHMEM_SHA256),
+            Triple("proot", bin, bundle.prootSha),
+            Triple("loader", File(libDir, "loader"), bundle.loaderSha),
+            Triple("loader32", File(libDir, "loader32"), bundle.loader32Sha),
+            Triple("libtalloc.so.2", File(libDir, "libtalloc.so.2"), bundle.tallocSha),
+            Triple("libandroid-shmem.so", File(libDir, "libandroid-shmem.so"), bundle.shmemSha),
         )
         for ((asset, target, sha) in plan) {
             if (target.isFile && Checksums.sha256(target).equals(sha, ignoreCase = true)) continue
             try {
-                context.assets.open("ubuntu/proot/x86_64/$asset").use { ins ->
+                context.assets.open("ubuntu/proot/${bundle.assetDir}/$asset").use { ins ->
                     if (target.exists()) target.delete()
                     FileOutputStream(target).use { fos -> ins.copyTo(fos, 64 * 1024) }
                 }
@@ -251,7 +326,7 @@ class ProotRunner(
                 )
             }
         }
-        Log.i(TAG, "bionic proot bundle ready at ${bin.absolutePath}")
+        Log.i(TAG, "bionic proot bundle ($abi) ready at ${bin.absolutePath}")
         return Result.success(Unit)
     }
 
@@ -259,23 +334,17 @@ class ProotRunner(
         const val TAG = "OpenChat/Proot"
 
         /**
-         * arm64/armhf pin proot v5.3.0 (official static builds, SHA-256 from
-         * the release SHA256SUMS) — verified working on real Android devices
-         * (the 5.3.0 aarch64 binary contains no glibc rseq registration, and
-         * the device platform policies are newer/looser than the emulator's).
+         * armhf pins proot v5.3.0 (official static build, SHA-256 from the
+         * release SHA256SUMS) — legacy 32-bit devices only.
          *
-         * x86_64 no longer uses a static glibc build: both 5.3.0 (faccessat2)
-         * and 5.4.1 (glibc.pthread.rseq at startup) were killed by SIGSYS
-         * (exit 159) under the emulator's zygote seccomp allowlist. It now
-         * ships the **bionic** Termux build of proot (proot-me master
-         * snapshot, NDK r29, min API 24) as APK assets — see the class docs.
-         * PROOT_X86_64_SHA256 below pins the asset binary; the proot-me
-         * release URL is kept only as a `prootUrlOverride` escape hatch.
+         * x86_64 and arm64-v8a no longer use static glibc builds: both 5.3.0
+         * (faccessat2) and 5.4.1 (glibc.pthread.rseq at startup) die with
+         * SIGSYS (exit 159) under Android's zygote seccomp allowlist — proven
+         * on the emulator and reported on real arm64 devices. Both ABIs ship
+         * the **bionic** Termux build of proot (proot-me master snapshot,
+         * NDK r29, min API 24) as APK assets — see the class docs and the
+         * BIONIC_* bundles below.
          */
-        const val PROOT_AARCH64_URL: String =
-            "https://github.com/proot-me/proot/releases/download/v5.3.0/proot-v5.3.0-aarch64-static"
-        const val PROOT_AARCH64_SHA256: String =
-            "fa10b1a7818c2f5b1dcb5834450570c368c9ecf66d31521509621b95c4538a45"
         const val PROOT_ARM_URL: String =
             "https://github.com/proot-me/proot/releases/download/v5.3.0/proot-v5.3.0-arm-static"
         const val PROOT_ARM_SHA256: String =
@@ -286,18 +355,27 @@ class ProotRunner(
             "https://github.com/proot-me/proot/releases/download/v5.4.1/proot"
 
         /** Bionic proot bundle pins (Termux packages proot 5.1.107.92, talloc
-         *  2.4.3, libandroid-shmem 0.7 — x86_64, NDK r29, extracted from the
-         *  .deb files; SHA-256 computed over the extracted files). */
-        const val PROOT_X86_64_SHA256: String =
-            "5c6b99c48ebb87580551afd654e49eb8d178fd45fef0b65397c99a1d901c417b"
-        const val PROOT_LOADER_SHA256: String =
-            "914564ea1c66f50b38f18cac857fcf814c6b1ab027789178880fca1d530599b3"
-        const val PROOT_LOADER32_SHA256: String =
-            "7fb73fa7f1879f7d210db70a0e3961161d0439e892c38bb834e6e17f162fae30"
-        const val PROOT_LIBTALLOC_SHA256: String =
-            "77be445f4ec245fff9c19e9874ebcf99618244cf48737f5fca938316daaa70da"
-        const val PROOT_LIBSHMEM_SHA256: String =
-            "092926060298acd3778e6239033d7aef1280dcb59aebe021a3719612e6a3465f"
+         *  2.4.3, libandroid-shmem 0.7 — NDK r29, extracted from the .deb
+         *  files; SHA-256 computed over the extracted files). The x86_64
+         *  bundle has been green in E2E since v0.1.11 (run 35060182063); the
+         *  arm64-v8a bundle is the same upstream build for aarch64 and
+         *  replaces the seccomp-killed static 5.3.0 on real devices. */
+        val BIONIC_X86_64 = BionicBundle(
+            assetDir = "x86_64",
+            prootSha = "5c6b99c48ebb87580551afd654e49eb8d178fd45fef0b65397c99a1d901c417b",
+            loaderSha = "914564ea1c66f50b38f18cac857fcf814c6b1ab027789178880fca1d530599b3",
+            loader32Sha = "7fb73fa7f1879f7d210db70a0e3961161d0439e892c38bb834e6e17f162fae30",
+            tallocSha = "77be445f4ec245fff9c19e9874ebcf99618244cf48737f5fca938316daaa70da",
+            shmemSha = "092926060298acd3778e6239033d7aef1280dcb59aebe021a3719612e6a3465f",
+        )
+        val BIONIC_ARM64 = BionicBundle(
+            assetDir = "arm64-v8a",
+            prootSha = "ea47e17da8e6ff4882c169c6508861e5b4be9227e477c6020f4f14facc85c10d",
+            loaderSha = "44ef39c1e1a18c09f6e4c4b5d6f8bba82d30596598bd155ec162d05c5122ff04",
+            loader32Sha = "25f6bd90bc5a3d3088026289a0d3eaf3e502bd2b00e5cb74fadd9791132efa34",
+            tallocSha = "3c9b207c0a6ea2896b7523e03f55d9ab0d9e88baa115d4c32b84058ff4246fbb",
+            shmemSha = "84475798e07c8174dbbfaec70a827fdb02f19ffa69a589380c13e7507fd0e731",
+        )
 
         /**
          * Base environment for every proot process (pure function — JVM-tested).
@@ -307,10 +385,11 @@ class ProotRunner(
          * writable for Android app processes, which failed every exec with
          * `can't create temporary directory: Permission denied` (exit 255).
          *
-         * [prootLibDir] (bionic x86_64 build only) puts our support libs on
-         * the loader path and points proot at its external ptrace loader —
-         * the exec'd process env is fully replaced by the app, so these MUST
-         * be explicit. In the guest the path does not exist (the app dir is
+         * [prootLibDir] (bionic builds: x86_64 and arm64-v8a) puts our
+         * support libs on the loader path and points proot at its external
+         * ptrace loader — the exec'd process env is fully replaced by the
+         * app, so these MUST be explicit. In the guest the path does not
+         * exist (the app dir is
          * not bound into the rootfs), so leaking it to guest commands is
          * harmless.
          */

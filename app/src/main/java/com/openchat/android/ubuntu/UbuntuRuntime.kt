@@ -995,6 +995,12 @@ class UbuntuRuntime(
                     // output tail — no more bare "error code 255" with the cause hidden.
                     return@withContext Result.failure(ErrorInfoException(ProotFailureMapper.map(lines)))
                 }
+                if (code >= 128) {
+                    // Signal death (128+signal). Exit 159 = SIGSYS: the device's
+                    // seccomp policy killed proot — previously surfaced as a bare
+                    // "exited with code 159" with an empty tail.
+                    return@withContext Result.failure(ErrorInfoException(ProotFailureMapper.mapSignalExit(code, lines)))
+                }
             } else {
                 _failureTail.value = emptyList()
             }
@@ -1063,11 +1069,12 @@ class UbuntuRuntime(
     }
 
     /**
-     * Diverts /sbin/ldconfig to a no-op on x86_64 (idempotent, all states).
+     * Keeps /sbin/ldconfig functional on non-x86_64 rootfs, and diverts it to
+     * a no-op on x86_64 (idempotent, all states).
      *
-     * Why: focal's /sbin/ldconfig is a shell wrapper that `exec`s
-     * /sbin/ldconfig.real — a STATIC glibc binary. Static binaries bypass the
-     * guest syscall-compat preload (only the dynamic loader reads
+     * Why the x86_64 diversion: focal's /sbin/ldconfig is a shell wrapper that
+     * `exec`s /sbin/ldconfig.real — a STATIC glibc binary. Static binaries
+     * bypass the guest syscall-compat preload (only the dynamic loader reads
      * /etc/ld.so.preload), so under the zygote seccomp filter ldconfig.real
      * hits raw ENOSYS on the legacy syscalls glibc 2.31 still issues and dies
      * — `ldconfig || ldconfig --verbose` fails twice and the libc-bin
@@ -1076,6 +1083,16 @@ class UbuntuRuntime(
      * containerized rootfs: the dynamic loader falls back to the default
      * library paths, which hold every library we ship — the same trade
      * Termux glibc environments make.
+     *
+     * Why NOT on other ABIs (v0.1.11 regression fixed here): arm64 has no
+     * legacy-rename problem (the kernel ABI has no legacy syscalls at all —
+     * glibc uses the *at() variants), the compat preload is not installed,
+     * and a no-op ldconfig only breaks guest library bookkeeping. Worse, the
+     * diversion leaked to arm64 in v0.1.11 and TOUCHES THE DPKG DATABASE —
+     * so the non-x86_64 branch must actively UNDO it on rootfs installed by
+     * that version: remove the no-op symlink, deregister the diversion (that
+     * renames ldconfig.distrib back), restore the wrapper if a leftover
+     * remains. Idempotent; safe on never-diverted rootfs.
      *
      * The diversion (not a plain overwrite) is what survives libc-bin
      * upgrades: dpkg writes the new wrapper to /sbin/ldconfig.distrib and
@@ -1088,12 +1105,23 @@ class UbuntuRuntime(
      *    rename the (freshly extracted) wrapper to .distrib, register
      *  - always refresh the no-op symlink
      */
-    private suspend fun divertLdconfig(): Result<Unit> = runChecked(
-        "if [ -z \"$(dpkg-divert --list /sbin/ldconfig)\" ]; then " +
-            "rm -f /sbin/ldconfig.distrib; " +
-            "dpkg-divert --local --rename --add /sbin/ldconfig; " +
-            "fi; ln -sf /bin/true /sbin/ldconfig",
-    )
+    private suspend fun divertLdconfig(): Result<Unit> {
+        if (Build.SUPPORTED_ABIS[0] != "x86_64") {
+            return runChecked(
+                // v0.1.11 leaked the diversion to every ABI — undo it here.
+                "[ -L /sbin/ldconfig ] && rm -f /sbin/ldconfig; " +
+                    "dpkg-divert --local --rename --remove /sbin/ldconfig 2>/dev/null || true; " +
+                    "if [ ! -e /sbin/ldconfig ] && [ -f /sbin/ldconfig.distrib ]; then " +
+                    "mv /sbin/ldconfig.distrib /sbin/ldconfig; fi; true",
+            )
+        }
+        return runChecked(
+            "if [ -z \"$(dpkg-divert --list /sbin/ldconfig)\" ]; then " +
+                "rm -f /sbin/ldconfig.distrib; " +
+                "dpkg-divert --local --rename --add /sbin/ldconfig; " +
+                "fi; ln -sf /bin/true /sbin/ldconfig",
+        )
+    }
 
 
     private fun failStep(step: String, t: Throwable): Result<Unit> {

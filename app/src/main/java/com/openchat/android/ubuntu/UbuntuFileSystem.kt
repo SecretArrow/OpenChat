@@ -58,9 +58,13 @@ object UbuntuFileSystem {
      */
     fun prootComplete(context: Context): Boolean {
         if (!prootBin(context).isFile) return false
-        if (Build.SUPPORTED_ABIS[0] != "x86_64") return true
-        val lib = prootLibDir(context)
-        return File(lib, "libtalloc.so.2").isFile && File(lib, "loader").isFile
+        // Bionic-bundle ABIs (x86_64 since v0.1.11, arm64-v8a since v0.1.12)
+        // also need the ptrace loaders + support libs on disk.
+        if (Build.SUPPORTED_ABIS[0] == "x86_64" || Build.SUPPORTED_ABIS[0] == "arm64-v8a") {
+            val lib = prootLibDir(context)
+            return File(lib, "libtalloc.so.2").isFile && File(lib, "loader").isFile
+        }
+        return true
     }
 
     /**

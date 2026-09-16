@@ -151,6 +151,42 @@ object ProotFailureMapper {
             )
         }
 
+        // Guest-side loader failures — a command inside the rootfs could not
+        // start because a library is missing/incompatible (broken upgrade,
+        // wrong-arch library, no-op ldconfig left a stale cache). These are
+        // NOT proot's own errors (proot exits 255 after printing them), so
+        // they must be matched before the honest fallback.
+        firstLine("error while loading shared libraries", "cannot open shared object file")?.let { hit ->
+            return ErrorInfo(
+                title = "A program inside Ubuntu is missing a shared library",
+                detail = withTail(hit.trim(), lines),
+                causes = listOf(
+                    "The library was removed or upgraded while a program still needs it",
+                    "A stale /etc/ld.so.cache or a partially-applied package operation",
+                ),
+                suggestions = listOf(
+                    "Run Repair — it re-links package state (apt-get -f install) and refreshes the loader setup",
+                    "If one app inside Ubuntu fails repeatedly, reinstall it inside Ubuntu: apt-get install --reinstall <package>",
+                ),
+                retryable = true,
+            )
+        }
+
+        firstLine("CANNOT LINK EXECUTABLE", "Inconsistency detected by ld.so")?.let { hit ->
+            return ErrorInfo(
+                title = "The guest dynamic linker rejected a program",
+                detail = withTail(hit.trim(), lines),
+                causes = listOf(
+                    "A binary/library inside the rootfs does not match the guest libc (mixed-architecture import or interrupted upgrade)",
+                ),
+                suggestions = listOf(
+                    "Run Repair; if it persists, Reset and Install again",
+                    "For Import: use an archive exported from the same architecture",
+                ),
+                retryable = true,
+            )
+        }
+
         // Honest fallback: no known signature — show the real output so neither
         // the user nor a bug report has to guess.
         return ErrorInfo(
@@ -175,5 +211,48 @@ object ProotFailureMapper {
             .map { "  | " + it.take(LINE_CLIP) }
         if (tail.isEmpty()) return firstHit
         return firstHit + "\nOutput tail:\n" + tail.joinToString("\n")
+    }
+
+    /**
+     * Maps a process exit that is a SIGNAL death (128+signal) onto an
+     * actionable error. Exit 159 = 128+SIGSYS: the kernel's seccomp policy
+     * killed proot for a syscall the allowlist refuses. This used to fall
+     * through as a bare "exited with code 159" with an empty tail — users
+     * on stricter vendor kernels reported exactly that (v0.1.10/11 static
+     * glibc proot; fixed by the bionic proot bundle, but the error must stay
+     * explainable if any device still triggers it).
+     */
+    fun mapSignalExit(exitCode: Int, lines: List<String>): ErrorInfo {
+        val signal = exitCode - 128
+        if (exitCode == 128 + 31) {
+            return ErrorInfo(
+                title = "The kernel killed proot (seccomp SIGSYS)",
+                detail = withTail("process died from signal 31 (SIGSYS) — exit $exitCode", lines),
+                causes = listOf(
+                    "The device's seccomp policy refuses a syscall the proot binary made at startup",
+                    "Known trigger: static glibc proot builds on kernels with a strict zygote allowlist",
+                ),
+                suggestions = listOf(
+                    "Update to the latest app version — it ships a bionic proot that avoids these syscalls",
+                    "Run Repair to refresh the installed proot binary",
+                    "If it persists on the latest version, report the device model + Android version",
+                ),
+                retryable = true,
+            )
+        }
+        return ErrorInfo(
+            title = "The process died from signal $signal (exit $exitCode)",
+            detail = withTail("terminated by signal $signal", lines),
+            causes = listOf(
+                "The kernel or the OS terminated the process abnormally",
+                "Possible causes: memory pressure (OOM), a security policy, or a crash inside proot",
+            ),
+            suggestions = listOf(
+                "Retry; close other apps first if memory is tight",
+                "Run diagnostics (Settings → Ubuntu → Run diagnostics) and include the report in any bug report",
+                "Run Repair; if it persists, Reset and Install again",
+            ),
+            retryable = true,
+        )
     }
 }

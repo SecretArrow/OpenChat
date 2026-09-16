@@ -159,4 +159,45 @@ class AptSourcesTest {
         assertEquals("armhf", AptSources.archFromUname("armv7l"))
         assertEquals(null, AptSources.archFromUname("riscv64"))
     }
+
+    @Test
+    fun `shared-library signature maps to actionable error`() {
+        val lines = listOf(
+            "proot info: started /bin/bash",
+            "/usr/bin/apt: error while loading shared libraries: libapt-pkg.so.6.0: cannot open shared object file: No such file or directory",
+        )
+        val err = ProotFailureMapper.map(lines)
+        assertEquals("A program inside Ubuntu is missing a shared library", err.title)
+        assertTrue(err.detail.contains("libapt-pkg.so.6.0"))
+        assertTrue(err.retryable)
+    }
+
+    @Test
+    fun `bionic linker signature maps to linker error`() {
+        val lines = listOf("CANNOT LINK EXECUTABLE \"/bin/sh\": library \"libxxx.so\" not found: needed by /bin/sh")
+        val err = ProotFailureMapper.map(lines)
+        assertEquals("The guest dynamic linker rejected a program", err.title)
+    }
+
+    @Test
+    fun `exit 159 maps to seccomp SIGSYS explanation`() {
+        val err = ProotFailureMapper.mapSignalExit(159, emptyList())
+        assertEquals("The kernel killed proot (seccomp SIGSYS)", err.title)
+        assertTrue(err.detail.contains("SIGSYS"))
+        assertTrue(err.retryable)
+    }
+
+    @Test
+    fun `other signal deaths map with the signal number`() {
+        val err = ProotFailureMapper.mapSignalExit(137, emptyList())
+        assertEquals("The process died from signal 9 (exit 137)", err.title)
+    }
+
+    @Test
+    fun `unknown 255 still falls back honestly with the tail`() {
+        val err = ProotFailureMapper.map(listOf("something unprecedented went wrong"))
+        assertEquals("Command exited with code 255 (proot fatal)", err.title)
+        assertTrue(err.detail.contains("no known proot signature"))
+        assertTrue(err.detail.contains("something unprecedented went wrong"))
+    }
 }
