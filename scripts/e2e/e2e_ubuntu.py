@@ -919,7 +919,10 @@ class E2E:
 
         # APT — the app's install pipeline ran apt-get update + install; prove it
         aptv = self.inroot_cmd("apt --version 2>&1 | head -1 && git --version && python3 -V")
-        if not ("apt" in aptv and "git version" in aptv and "python" in aptv):
+        # Case-insensitive: `python3 -V` prints "Python 3.8.10" (capital P) — a
+        # case-sensitive "python" needle false-failed a fully green output.
+        aptl = aptv.lower()
+        if not ("apt" in aptl and "git version" in aptl and "python" in aptl):
             self.fail("APT", f"apt/tools verification failed:\n{aptv[:500]}")
         self.stages["APT"].pass_(f"apt + apt-installed tools present:\n{aptv.strip()[:200]}")
 
