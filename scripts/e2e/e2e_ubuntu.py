@@ -929,7 +929,15 @@ class E2E:
         # DNS + HTTP inside Ubuntu (spec §9)
         dns = self.inroot_cmd("getent hosts deb.debian.org || getent hosts ubuntu.com", timeout=90)
         http = self.inroot_cmd("curl -sI -m 25 https://example.com | head -1", timeout=90)
-        dns_ok = bool(re.search(r"\d+\.\d+\.\d+\.\d+", dns))
+        # Resolution proof = a resolvable address, v4 OR v6. getent on the
+        # emulator resolved deb.debian.org to AAAA-only (Fastly) — an IPv4-only
+        # needle false-failed working DNS. curl's HTTP/2 200 in the same stage
+        # independently proves resolution anyway; no match on both shapes means
+        # DNS genuinely failed and the stage still fails honestly.
+        dns_ok = bool(
+            re.search(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", dns)
+            or re.search(r"\b[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{0,4}){2,7}\b", dns)
+        )
         http_ok = "HTTP" in http.upper()
         ev = [f"getent: {dns.strip()[:120] or '(no answer)'}", f"curl: {http.strip()[:80] or '(no answer)'}"]
         if dns_ok and http_ok:
