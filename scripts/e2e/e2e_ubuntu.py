@@ -975,11 +975,19 @@ class E2E:
         if len(session_ui) < 2:
             self.fail("TERMINAL_UI",
                       f"terminal session UI not composed (spinner or blank?): {blob[:300]}")
-        self.adb.type_text("touch /tmp/e2e-terminal-typed")
+        # Type like a real user, one character per commit: the invisible field
+        # resets to "" on every insertion and forwards it, so a BULK
+        # `adb input text` makes GBoard deliver cumulative composition chunks
+        # and the PTY receives garbled doubles ("ttotouuchch…", run
+        # 35058595293 screenshot). Per-char commits into the always-empty
+        # field are exactly what a keyboard does.
+        for ch in "touch /tmp/e2e-t":
+            self.adb.type_text(ch)
+            time.sleep(0.2)
         self.adb.keyevent(66)
         time.sleep(3)
         self.adb.screenshot("05-terminal-after-echo")
-        typed = self.inroot_cmd("test -f /tmp/e2e-terminal-typed && echo TYPED_OK")
+        typed = self.inroot_cmd("test -f /tmp/e2e-t && echo TYPED_OK")
         if "TYPED_OK" not in typed:
             self.fail("TERMINAL_UI",
                       f"typed command never executed inside the rootfs "
