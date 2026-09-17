@@ -166,8 +166,8 @@ class ProotRunner(
 
     /**
      * Builds the real proot session/exec spec:
-     * argv = [proot, --kill-on-exit, -0, -w, cwd, -R, rootfs] + identity binds + cmd,
-     * env  = [baseEnv] + caller extras (caller overrides win).
+     * argv = [proot, --kill-on-exit, -0, -w, cwd, -R, rootfs] + identity binds
+     * + guest tmp binds + cmd, env = [baseEnv] + caller extras (caller wins).
      */
     fun buildSessionSpec(
         cwd: String,
@@ -175,15 +175,6 @@ class ProotRunner(
         env: Map<String, String>,
         rootfs: File,
     ): SessionSpec {
-        val argv = mutableListOf(
-            UbuntuFileSystem.prootBin(context).absolutePath,
-            "--kill-on-exit",
-            "-0",
-            "-w",
-            cwd,
-            "-R",
-            rootfs.absolutePath,
-        )
         // proot -R bind-mounts the HOST's /etc/passwd, /etc/group and
         // /etc/nsswitch.conf into the guest (its "recommended binds"). On
         // Android those files lack _apt/sudo/ssh, so every guest NSS lookup
@@ -193,11 +184,37 @@ class ProotRunner(
         // host passwd through -R). Later -b arguments override earlier binds,
         // so re-binding the guest's own files over them restores normal
         // guest NSS behavior (verified locally: _apt visible, getent RC=0).
-        for (rel in listOf("etc/passwd", "etc/group", "etc/nsswitch.conf")) {
-            argv.add("-b")
-            argv.add("${rootfs.absolutePath}/$rel:/$rel")
+        val identityBinds = listOf("etc/passwd", "etc/group", "etc/nsswitch.conf").map { rel ->
+            "${rootfs.absolutePath}/$rel" to "/$rel"
         }
-        argv.addAll(cmd)
+        // proot -R ALSO bind-mounts the HOST's /tmp (and /dev/shm) over the
+        // guest. On stock Android neither exists, proot skips the bind and the
+        // guest falls back to the rootfs's own /tmp — which is why CI never
+        // saw this. On several vendor builds (real-device report v0.1.13,
+        // OPPO CPH2529 / ColorOS 15) the host /tmp EXISTS but is not writable
+        // by the app: the bind then succeeds and every guest mkstemp in /tmp
+        // fails with EACCES — apt printed
+        //   "Couldn't create temporary file /tmp/apt.conf.XXXXXX for passing
+        //    config to apt-key" → "The repository … is not signed"
+        // on a rootfs that was perfectly fine (the same flow is green in E2E).
+        // Later -b arguments override -R's recommended binds (the exact
+        // mechanism the NSS binds above rely on), so binding an app-owned
+        // directory over /tmp makes guest temp files deterministic on every
+        // device — the same thing Termux proot-distro does for its distros.
+        // guestTmpDir/guestShmDir mkdir on demand, so even a rootfs installed
+        // by an older app version is covered on the next exec, no Repair needed.
+        val tmpBinds = listOf(
+            UbuntuFileSystem.guestTmpDir(context).absolutePath to "/tmp",
+            UbuntuFileSystem.guestShmDir(context).absolutePath to "/dev/shm",
+        )
+        val argv = sessionArgv(
+            prootBin = UbuntuFileSystem.prootBin(context).absolutePath,
+            cwd = cwd,
+            rootfsPath = rootfs.absolutePath,
+            identityBinds = identityBinds,
+            tmpBinds = tmpBinds,
+            cmd = cmd,
+        )
         val merged = mergeEnv(
             baseEnv(UbuntuFileSystem.prootTmpDir(context).absolutePath, bionicLibDir()),
             env,
@@ -332,6 +349,38 @@ class ProotRunner(
 
     companion object {
         const val TAG = "OpenChat/Proot"
+
+        /**
+         * Pure argv assembly for every proot exec/session (JVM-tested):
+         * [proot, --kill-on-exit, -0, -w, cwd, -R, rootfs] then one `-b host:guest`
+         * pair per bind (identity binds first, guest tmp binds last — both must
+         * come AFTER `-R` so they override its recommended host binds) then the
+         * command.
+         */
+        fun sessionArgv(
+            prootBin: String,
+            cwd: String,
+            rootfsPath: String,
+            identityBinds: List<Pair<String, String>>,
+            tmpBinds: List<Pair<String, String>>,
+            cmd: List<String>,
+        ): List<String> {
+            val argv = mutableListOf(
+                prootBin,
+                "--kill-on-exit",
+                "-0",
+                "-w",
+                cwd,
+                "-R",
+                rootfsPath,
+            )
+            for ((host, guest) in identityBinds + tmpBinds) {
+                argv.add("-b")
+                argv.add("$host:$guest")
+            }
+            argv.addAll(cmd)
+            return argv
+        }
 
         /**
          * armhf pins proot v5.3.0 (official static build, SHA-256 from the

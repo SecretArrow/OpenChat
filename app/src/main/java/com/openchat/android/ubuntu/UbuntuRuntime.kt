@@ -556,6 +556,9 @@ class UbuntuRuntime(
                 // raw ubuntu-base tarballs may carry an outdated archive keyring
                 // and no CA store at all (HTTPS sources would fail to verify).
                 installer.restoreAptTrust(rootfs)
+                // Guest tmp dirs: the bind targets must exist and the imported
+                // rootfs's own /tmp must be present (fallback layer).
+                UbuntuFileSystem.ensureGuestTmpDirs(context, rootfs)
             }
 
             setState(UbuntuState.IMPORTING, "Running smoke test…", 95)
@@ -820,6 +823,19 @@ class UbuntuRuntime(
             )
             val disk = runCommand("df -h /tmp 2>/dev/null | tail -1", timeoutMs = 30_000)
             disk.onSuccess { s -> out.add("in-rootfs /tmp volume: ${s.lineSequence().lastOrNull()?.take(140) ?: "?"}") }
+            // The v0.1.14 device bug in one probe: apt's signature check does
+            // exactly this mkstemp in /tmp — if it fails, apt reports every
+            // repository as "not signed". Also records the guest tmp bind dirs.
+            val tmpProbe = runCommand(
+                "f=\$(mktemp /tmp/octest.XXXXXX 2>&1) && { echo \"MKTEMP_OK \$f\"; rm -f \"\$f\"; } || echo \"MKTEMP_FAILED \$f\"",
+                timeoutMs = 30_000,
+            )
+            val tmpLine = tmpProbe.getOrNull()?.lineSequence()?.firstOrNull { it.isNotBlank() } ?: "(probe failed)"
+            out.add("in-rootfs /tmp mktemp: ${tmpLine.take(140)}")
+            out.add(
+                "guest tmp bind dirs: tmp=${UbuntuFileSystem.guestTmpDir(context).isDirectory} " +
+                    "shm=${UbuntuFileSystem.guestShmDir(context).isDirectory}",
+            )
         }
 
         // 6. The last failure tail, if any — ties the report to the visible error
@@ -1035,12 +1051,18 @@ class UbuntuRuntime(
                 } else {
                     // Non-zero guest command failure: surface the real output tail
                     // with the error so the cause is visible without opening the log.
-                    // Signature failures get a dedicated, actionable card — after the
-                    // automatic keyring/HTTPS repair this is the honest dead end.
-                    val failureInfo = if (AptDiagnostics.isSignatureFailure(_failureTail.value)) {
-                        AptDiagnostics.signatureErrorInfo(_failureTail.value)
-                    } else {
-                        ErrorInfo(
+                    // Temp-file failures take precedence over signature failures:
+                    // a temp-file tail also contains "is not signed" lines (apt's
+                    // conclusion after the mkstemp failure), and only the tmp-aware
+                    // card names the real cause. Signature failures get their
+                    // dedicated card — after the automatic keyring/HTTPS repair
+                    // this is the honest dead end.
+                    val failureInfo = when {
+                        AptDiagnostics.isTempFileFailure(_failureTail.value) ->
+                            AptDiagnostics.tempFileErrorInfo(_failureTail.value)
+                        AptDiagnostics.isSignatureFailure(_failureTail.value) ->
+                            AptDiagnostics.signatureErrorInfo(_failureTail.value)
+                        else -> ErrorInfo(
                             title = "'$cmd' exited with code $code",
                             detail = ProotFailureMapper.withTail("The command failed (exit $code).", _failureTail.value),
                             causes = listOf(
@@ -1062,19 +1084,30 @@ class UbuntuRuntime(
         )
 
     /**
-     * `apt-get update` with layered self-healing (v0.1.13):
+     * `apt-get update` with layered self-healing (v0.1.14):
      *
      *  1. Sources upgrade: legacy plain-HTTP official mirrors are rewritten
      *     to HTTPS before the first attempt (transparent proxies on real
      *     networks answer HTTP with their own content — the exact cause of
      *     the reported `repository … is not signed` failures).
      *  2. First attempt; a transient failure retries once after 3s.
-     *  3. Signature failure (`NO_PUBKEY` / `is not signed` / GPG error):
+     *  3. Temp-file failure (`Couldn't create temporary file … for passing
+     *     config to apt-key`, real-device report v0.1.13/v0.1.14): re-provision
+     *     every tmp directory host-side (bind dirs + rootfs /tmp, /var/tmp,
+     *     apt partial dirs) and retry — heals a deleted/locked tmp tree. The
+     *     /tmp bind itself lives in [ProotRunner.buildSessionSpec] and is
+     *     already active for this attempt.
+     *  4. Signature failure (`NO_PUBKEY` / `is not signed` / GPG error):
      *     re-provision the pinned Ubuntu archive keyring + CA bundle from the
      *     APK assets, clear the cached lists, and retry — this heals rootfs
-     *     bases whose keyring predates the 2018 archive signing key.
-     *  4. Whatever still fails surfaces honestly with the real apt output
-     *     ([runChecked] attaches the signature-aware ErrorInfo).
+     *     bases whose keyring predates the 2018 archive signing key. Checked
+     *     AFTER the temp-file class: a temp-file tail also matches the
+     *     signature markers (apt declares the repo "not signed" after the
+     *     mkstemp failure), and the keyring repair cannot fix a /tmp problem
+     *     (proven by the v0.1.13 device report: two keyring repairs, identical
+     *     error).
+     *  5. Whatever still fails surfaces honestly with the real apt output
+     *     ([runChecked] attaches the cause-aware ErrorInfo).
      */
     private suspend fun runAptUpdate(): Result<Unit> {
         upgradeAptSourcesToHttps()
@@ -1082,6 +1115,17 @@ class UbuntuRuntime(
         val first = runChecked(cmd)
         if (first.isSuccess) return first
         val tail = _failureTail.value
+        if (AptDiagnostics.isTempFileFailure(tail)) {
+            addLog("[warn] apt cannot create temporary files in /tmp — re-provisioning tmp " +
+                "directories (host bind dirs + rootfs /tmp, /var/tmp, apt partials) and retrying")
+            runCatching { UbuntuFileSystem.ensureGuestTmpDirs(context, rootfsDir()) }
+                .onFailure { addLog("[warn] tmp re-provision failed: ${it.message ?: it.javaClass.simpleName}") }
+            val repaired = runChecked(cmd)
+            if (repaired.isSuccess) {
+                addLog("APT tmp repair succeeded — /tmp is writable again")
+            }
+            return repaired // honest failure with the tmp-aware error below
+        }
         if (AptDiagnostics.isSignatureFailure(tail)) {
             addLog("[warn] APT signature verification failed (NO_PUBKEY / 'is not signed') — " +
                 "restoring the pinned Ubuntu archive keyring + CA bundle, clearing cached lists, retrying")

@@ -32,8 +32,8 @@ android {
         // SELinux untrusted_app legacy policy so the Ubuntu userspace (proot/bash)
         // can execute downloaded rootfs binaries — same approach as Termux.
         targetSdk 28
-        versionCode 14
-        versionName '0.1.13'
+        versionCode 15
+        versionName '0.1.14'
 
         externalNativeBuild {
             cmake {

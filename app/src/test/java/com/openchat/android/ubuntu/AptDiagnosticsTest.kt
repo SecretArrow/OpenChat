@@ -126,4 +126,88 @@ class AptDiagnosticsTest {
         assertTrue(info.repairAction == RepairAction.UBUNTU_REPAIR)
         assertTrue(info.retryable)
     }
+
+    // ------------------------------------------------- temp-file class (v0.1.14)
+
+    /** The EXACT output captured from the real device report (OPPO CPH2529). */
+    private val deviceTempFileReport = listOf(
+        "Hit:1 https://ports.ubuntu.com/ubuntu-ports focal InRelease",
+        "Get:1 https://ports.ubuntu.com/ubuntu-ports focal InRelease [265 kB]",
+        "Err:1 https://ports.ubuntu.com/ubuntu-ports focal InRelease",
+        "  Couldn't create temporary file /tmp/apt.conf.bksSjz for passing config to apt-key",
+        "Err:2 https://ports.ubuntu.com/ubuntu-ports focal-updates InRelease",
+        "  Couldn't create temporary file /tmp/apt.conf.KpwkLC for passing config to apt-key",
+        "Reading package lists...",
+        "W: GPG error: https://ports.ubuntu.com/ubuntu-ports focal InRelease: " +
+            "Couldn't create temporary file /tmp/apt.conf.bksSjz for passing config to apt-key",
+        "E: The repository 'https://ports.ubuntu.com/ubuntu-ports focal InRelease' is not signed.",
+        "W: GPG error: https://ports.ubuntu.com/ubuntu-ports focal-updates InRelease: " +
+            "Couldn't create temporary file /tmp/apt.conf.KpwkLC for passing config to apt-key",
+        "E: The repository 'https://ports.ubuntu.com/ubuntu-ports focal-updates InRelease' is not signed.",
+    )
+
+    @Test
+    fun `temp file failure is detected in the exact real device report`() {
+        assertTrue(AptDiagnostics.isTempFileFailure(deviceTempFileReport))
+    }
+
+    @Test
+    fun `temp file failure takes precedence over the signature class`() {
+        // The same tail matches BOTH classifiers (apt concludes "is not signed"
+        // after the mkstemp failure) — the runtime must attempt the tmp repair,
+        // not the keyring restore. This test pins the classification itself.
+        assertTrue(AptDiagnostics.isTempFileFailure(deviceTempFileReport))
+        assertTrue(AptDiagnostics.isSignatureFailure(deviceTempFileReport))
+    }
+
+    @Test
+    fun `bare temp file half without the apt-key tail does not match`() {
+        // Precision: "Couldn't create temporary file" alone must not trigger
+        // the tmp classifier — both markers must be on the SAME line.
+        assertFalse(
+            AptDiagnostics.isTempFileFailure(
+                listOf("dpkg: error: couldn't create temporary file while extracting './x'"),
+            ),
+        )
+    }
+
+    @Test
+    fun `plain signature and network failures are not temp file failures`() {
+        assertFalse(
+            AptDiagnostics.isTempFileFailure(
+                listOf("E: The repository 'http://…' is not signed."),
+            ),
+        )
+        assertFalse(
+            AptDiagnostics.isTempFileFailure(
+                listOf("Err:1 https://ports.ubuntu.com … Temporary failure resolving 'ports.ubuntu.com'"),
+            ),
+        )
+        assertFalse(AptDiagnostics.isTempFileFailure(emptyList()))
+    }
+
+    @Test
+    fun `temp file error info embeds the real apt lines and repair actions`() {
+        val info = AptDiagnostics.tempFileErrorInfo(deviceTempFileReport)
+        assertTrue(info.title.contains("temp", ignoreCase = true))
+        assertTrue(info.detail.contains("Couldn't create temporary file"))
+        assertTrue(info.detail.contains("/tmp/apt.conf.bksSjz"))
+        assertTrue(info.detail.contains("is not signed"))
+        assertTrue(info.detail.contains("apt output:"))
+        assertTrue(info.causes.any { it.contains("host /tmp", ignoreCase = true) })
+        assertTrue(info.causes.any { it.contains("vendor", ignoreCase = true) })
+        assertTrue(info.suggestions.any { it.contains("Copy error + logs") })
+        assertTrue(info.suggestions.any { it.contains("Repair") })
+        assertTrue(info.repairAction == RepairAction.UBUNTU_REPAIR)
+        assertTrue(info.retryable)
+    }
+
+    @Test
+    fun `temp file lines extract both error shapes for the detail`() {
+        val extracted = AptDiagnostics.tempFileLines(deviceTempFileReport)
+        assertTrue(extracted.any { it.contains("apt.conf.bksSjz") })
+        assertTrue(extracted.any { it.startsWith("E: The repository") })
+        // Cap respected (max 8 by default; the report has more matching lines).
+        assertTrue(extracted.size <= 8)
+    }
 }

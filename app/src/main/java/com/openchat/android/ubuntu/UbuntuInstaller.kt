@@ -164,6 +164,12 @@ class UbuntuInstaller(private val context: Context) {
             AptSources.writeFor(File(etc, "apt"), arch, variant.codename).getOrThrow()
             restoreAptTrust(rootfs)
             installSyscallCompat(rootfs)
+            // Guest tmp provisioning (v0.1.14): the host bind dirs proot mounts
+            // over the guest /tmp + /dev/shm must exist, and the rootfs's own
+            // /tmp (fallback layer) + apt's partial dirs must be present —
+            // apt's signature check mkstemp's /tmp/apt.conf.XXXXXX and dies
+            // with "repository … is not signed" when it cannot.
+            UbuntuFileSystem.ensureGuestTmpDirs(context, rootfs)
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(

@@ -38,7 +38,7 @@ SETTLE = 3
 STAGES = [
     "ENVIRONMENT", "APK_INSTALL", "APP_LAUNCH", "NAVIGATE",
     "INSTALL_START", "DOWNLOAD", "CHECKSUM_VERIFY", "EXTRACT", "ROOTFS_VERIFY",
-    "APT", "UBUNTU_BOOT", "SHELL", "DNS_HTTP", "TERMINAL_UI",
+    "APT", "TMP_WRITE", "UBUNTU_BOOT", "SHELL", "DNS_HTTP", "TERMINAL_UI",
     "LIFECYCLE_INTERFERENCE", "PERSISTENCE", "APP_RESTART", "PERSISTENCE_AFTER_RESTART",
 ]
 
@@ -523,6 +523,18 @@ class E2E:
                         try:
                             probe_lines = []
                             P = f"/data/data/{self.adb.package}/files"
+                            # The app's bind set (ProotRunner.buildSessionSpec):
+                            # identity binds + v0.1.14 guest-tmp binds. Probes
+                            # 1/1b/1c replicate the app's EXACT argv — without
+                            # the tmp binds they would run a /tmp the app no
+                            # longer uses and diverge from the real context.
+                            app_binds = (
+                                f" -b {P}/ubuntu/rootfs/etc/passwd:/etc/passwd"
+                                f" -b {P}/ubuntu/rootfs/etc/group:/etc/group"
+                                f" -b {P}/ubuntu/rootfs/etc/nsswitch.conf:/etc/nsswitch.conf"
+                                f" -b {P}/ubuntu/guest-tmp:/tmp"
+                                f" -b {P}/ubuntu/guest-shm:/dev/shm"
+                            )
                             # 1) Reproduce the app's EXACT exec context: env -i
                             # with only baseEnv (run-as shells inherit extra
                             # vars AND skip the zygote seccomp filter — env -i
@@ -532,7 +544,7 @@ class E2E:
                                 f"TERM=xterm-256color LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive TMPDIR=/tmp "
                                 f"PROOT_NO_SECCOMP=1 PROOT_TMP_DIR={P}/ubuntu/tmp "
                                 f"LD_LIBRARY_PATH={P}/ubuntu/lib PROOT_LOADER={P}/ubuntu/lib/loader PROOT_LOADER_32={P}/ubuntu/lib/loader32 "
-                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs "
+                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs{app_binds} "
                                 f"/bin/bash -c 'apt-get update' 2>&1 | tail -3; echo ENVI_RC=$?\n"
                             )
                             probe_lines.append("env -i (exact app env):\n" + self.adb.run_as_sh(env_i)[:800])
@@ -542,7 +554,7 @@ class E2E:
                             link_probe = (
                                 f"env -i HOME=/root PATH=/usr/bin:/bin TMPDIR=/tmp PROOT_NO_SECCOMP=1 PROOT_TMP_DIR={P}/ubuntu/tmp "
                                 f"LD_LIBRARY_PATH={P}/ubuntu/lib PROOT_LOADER={P}/ubuntu/lib/loader PROOT_LOADER_32={P}/ubuntu/lib/loader32 "
-                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs "
+                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs{app_binds} "
                                 f"/bin/bash -c 'link /usr/bin/perl /tmp/lk1; echo LINK_RC=$?; rm -f /tmp/lk1' 2>&1 | tail -2\n"
                             )
                             probe_lines.append("run-as link probe:\n" + self.adb.run_as_sh(link_probe)[:300])
@@ -556,10 +568,7 @@ class E2E:
                             nss_probe = (
                                 f"env -i HOME=/root PATH=/usr/bin:/bin TMPDIR=/tmp PROOT_NO_SECCOMP=1 PROOT_TMP_DIR={P}/ubuntu/tmp "
                                 f"LD_LIBRARY_PATH={P}/ubuntu/lib PROOT_LOADER={P}/ubuntu/lib/loader PROOT_LOADER_32={P}/ubuntu/lib/loader32 "
-                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs "
-                                f"-b {P}/ubuntu/rootfs/etc/passwd:/etc/passwd "
-                                f"-b {P}/ubuntu/rootfs/etc/group:/etc/group "
-                                f"-b {P}/ubuntu/rootfs/etc/nsswitch.conf:/etc/nsswitch.conf "
+                                f"{P}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {P}/ubuntu/rootfs{app_binds} "
                                 f"/bin/bash -c 'grep _apt /etc/passwd | head -1; "
                                 f"getent passwd _apt; echo P_RC=$?; getent group sudo; echo G_RC=$?; "
                                 f"ls /sbin/ldconfig* 2>&1; dpkg-divert --list /sbin/ldconfig' 2>&1 | tail -6\n"
@@ -888,6 +897,22 @@ class E2E:
     def inroot_cmd(self, cmd: str, timeout: int = 180) -> str:
         pkg = self.adb.package
         files = f"/data/data/{pkg}/files"
+        rootfs = f"{files}/ubuntu/rootfs"
+        # Bind set mirrors the app's ProotRunner.buildSessionSpec EXACTLY:
+        # identity binds (guest's own passwd/group/nsswitch over -R's host
+        # binds) + the v0.1.14 guest-tmp binds (guest-tmp:/tmp,
+        # guest-shm:/dev/shm). Without the tmp binds, a device/emulator image
+        # that SHIPS a host /tmp proot can bind would reproduce the real-device
+        # failure "Couldn't create temporary file /tmp/apt.conf.XXXXXX for
+        # passing config to apt-key" — the harness must exercise the same argv
+        # shape the app runs, not a simplified one.
+        binds = (
+            f" -b {rootfs}/etc/passwd:/etc/passwd"
+            f" -b {rootfs}/etc/group:/etc/group"
+            f" -b {rootfs}/etc/nsswitch.conf:/etc/nsswitch.conf"
+            f" -b {files}/ubuntu/guest-tmp:/tmp"
+            f" -b {files}/ubuntu/guest-shm:/dev/shm"
+        )
         script = (
             f"export HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/node/bin "
             f"TERM=xterm-256color LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive TMPDIR=/tmp PROOT_NO_SECCOMP=1\n"
@@ -897,7 +922,7 @@ class E2E:
             # sh via stdin, so a newline after -c would exec bash with no
             # argument ("-c: option requires an argument"). shlex.quote keeps
             # the full command a single argv element and inert to the outer sh.
-            + f"exec {files}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {files}/ubuntu/rootfs /bin/bash -c {shlex.quote(cmd)}\n"
+            + f"exec {files}/ubuntu/bin/proot --kill-on-exit -0 -w /root -R {rootfs}{binds} /bin/bash -c {shlex.quote(cmd)}\n"
         )
         return self.adb.inroot(script, timeout=timeout)
 
@@ -925,6 +950,34 @@ class E2E:
         if not ("apt" in aptl and "git version" in aptl and "python" in aptl):
             self.fail("APT", f"apt/tools verification failed:\n{aptv[:500]}")
         self.stages["APT"].pass_(f"apt + apt-installed tools present:\n{aptv.strip()[:200]}")
+
+        # TMP_WRITE — guest /tmp must be mkstemp-writable under the app's exact
+        # argv (inroot_cmd mirrors buildSessionSpec, including the v0.1.14
+        # guest-tmp:/tmp bind). Real-device report (OPPO CPH2529): proot -R
+        # bound the HOST's /tmp over the guest, apt's signature check could not
+        # create /tmp/apt.conf.XXXXXX and every repository read "is not
+        # signed". This stage is the functional proof of the fix: a real
+        # mkstemp in the bound /tmp, plus the mode the guest sees (bind dir is
+        # chmod 01777 host-side; the rootfs's own /tmp is 1777 in the tarball,
+        # so both layers must show a sticky 777).
+        tmps = self.inroot_cmd(
+            "f=$(mktemp /tmp/octest.XXXXXX) && echo MKTEMP_OK=$f && stat -c '%a' /tmp && rm -f \"$f\" && echo CLEANUP_OK",
+            timeout=90,
+        )
+        if "MKTEMP_OK" not in tmps:
+            self.fail("TMP_WRITE", f"mktemp in guest /tmp failed under the app's argv:\n{tmps[:600]}")
+        if "CLEANUP_OK" not in tmps:
+            self.fail("TMP_WRITE", f"created file could not be removed — /tmp semantics broken:\n{tmps[:600]}")
+        mode_line = next(
+            (ln.strip() for ln in tmps.splitlines() if ln.strip().isdigit()), "",
+        )
+        mode_note = f"mode={mode_line}" if mode_line else "mode=?"
+        if mode_line and not mode_line.endswith("777"):
+            self.fail("TMP_WRITE", f"/tmp lost its rwxrwxrwx bits (mode={mode_line}) — bind dir or rootfs /tmp mis-provisioned")
+        self.stages["TMP_WRITE"].pass_(
+            f"mkstemp in guest /tmp OK under the app's bind set ({mode_note}):\n"
+            + next((ln.strip() for ln in tmps.splitlines() if ln.startswith("MKTEMP_OK")), "")[:160]
+        )
 
         # DNS + HTTP inside Ubuntu (spec §9)
         dns = self.inroot_cmd("getent hosts deb.debian.org || getent hosts ubuntu.com", timeout=90)
