@@ -64,15 +64,15 @@ object UbuntuFileSystem {
     /**
      * Host-side directory bound over the guest's `/dev/shm` (POSIX shm_open,
      * python multiprocessing). Stock Android has no /dev/shm and vendor
-     * builds that do ship one are not app-writable — same failure class as
-     * the /tmp bind this pairs with.
+     * builds that do ship one are not app-writable — the same failure class
+     * as the /tmp bind this pairs with.
      */
     fun guestShmDir(context: Context): File = File(context.filesDir, "ubuntu/guest-shm").apply { mkdirs() }
 
     /**
-     * Host-side guarantee that guest temp-file directories exist and are
-     * usable (idempotent, called at configure/import/repair and from the
-     * apt temp-file self-healing path):
+     * Host-side guarantee that the guest temp-file directories exist and are
+     * usable (idempotent; called at configure/import and from the apt
+     * temp-file self-healing path):
      *
      *  - the host bind directories ([guestTmpDir], [guestShmDir]) — created
      *    and chmod 01777 so the guest sees a real sticky world-writable /tmp;
@@ -84,7 +84,8 @@ object UbuntuFileSystem {
      *    confusing error).
      *
      * chmod is best-effort: the app uid owns every directory involved, so a
-     * failed chmod never blocks a working setup (mkdirs is the essential part).
+     * failed chmod never blocks a working setup (mkdirs is the essential
+     * part and is enough for the app uid to write).
      */
     fun ensureGuestTmpDirs(context: Context, rootfs: File) {
         val hostDirs = listOf(guestTmpDir(context), guestShmDir(context))
@@ -176,4 +177,33 @@ object UbuntuFileSystem {
         // Canonical containment check (existing symlinks must not escape the root).
         val canonicalRoot = runCatching { root.canonicalFile }.getOrDefault(root)
         val canonicalResolved = runCatching { resolved.canonicalFile }.getOrDefault(resolved)
-        val rootPath = canonicalRoot.a
+        val rootPath = canonicalRoot.absolutePath.trimEnd('/')
+        val resolvedPath = canonicalResolved.absolutePath
+        if (resolvedPath != rootPath && !resolvedPath.startsWith("$rootPath/")) {
+            return Result.failure(
+                IllegalArgumentException("Path resolves outside the allowed root (got '$rel')"),
+            )
+        }
+        return Result.success(resolved)
+    }
+
+    /**
+     * True when a destructive Files-screen operation on this rootfs-relative path
+     * must be refused (least privilege, spec §23): everything outside the user
+     * areas (/root, /home, /tmp, /var, /opt, /srv) is protected, i.e. /bin /boot
+     * /dev /etc /lib /lib64 /media /mnt /proc /run /sbin /sys /usr.
+     */
+    fun isProtectedRootfsPath(rel: String): Boolean {
+        val first = rel.trim().trimStart('/')
+            .split('/')
+            .firstOrNull { it.isNotEmpty() }
+            ?.lowercase()
+            ?: return false
+        return first in PROTECTED_ROOTFS_DIRS
+    }
+
+    private val PROTECTED_ROOTFS_DIRS: Set<String> = setOf(
+        "bin", "boot", "dev", "etc", "lib", "lib64",
+        "media", "mnt", "proc", "run", "sbin", "sys", "usr",
+    )
+}
