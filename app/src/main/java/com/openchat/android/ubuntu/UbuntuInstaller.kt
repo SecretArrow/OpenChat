@@ -207,7 +207,7 @@ class UbuntuInstaller(private val context: Context) {
      *    /usr/share/keyrings/ubuntu-archive-keyring.gpg, contains the 2012
      *    AND 2018 archive signing keys (871920D1991BC93C verified).
      *  - CA bundle: ca-certificates 20240203~20.04.1 (focal-updates) — the
-     *    146 mozilla/*.crt sources concatenated, equivalent to what
+     *    146 mozilla .crt sources concatenated, equivalent to what
      *    update-ca-certificates writes to /etc/ssl/certs/ca-certificates.crt.
      */
     fun restoreAptTrust(rootfs: File) {

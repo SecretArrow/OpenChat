@@ -120,8 +120,8 @@ object AptSources {
 
     /**
      * Rewrites plain-HTTP official mirror URIs to their HTTPS form, in place,
-     * across `sources.list`, every `sources.list.d/*.list` fragment and the
-     * deb822 `ubuntu.sources` file.
+     * across `sources.list`, every `.list`/`.sources` fragment under
+     * `sources.list.d` and the deb822 `ubuntu.sources` file.
      *
      * Rootfs installed by older app versions (v0.1.12 and earlier) carry
      * `http://archive.ubuntu.com` / `http://ports.ubuntu.com` lines; on
