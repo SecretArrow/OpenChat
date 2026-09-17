@@ -1085,7 +1085,7 @@ class UbuntuRuntime(
         if (AptDiagnostics.isSignatureFailure(tail)) {
             addLog("[warn] APT signature verification failed (NO_PUBKEY / 'is not signed') — " +
                 "restoring the pinned Ubuntu archive keyring + CA bundle, clearing cached lists, retrying")
-            val trustRestored = runCatching { installer.restoreAptTrust(File(rootfsDir())) }
+            val trustRestored = runCatching { installer.restoreAptTrust(rootfsDir()) }
                 .onFailure { addLog("[warn] keyring restore failed: ${it.message ?: it.javaClass.simpleName}") }
                 .isSuccess
             if (trustRestored) {
