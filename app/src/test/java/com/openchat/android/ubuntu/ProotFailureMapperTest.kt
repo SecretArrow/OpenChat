@@ -3,9 +3,7 @@ package com.openchat.android.ubuntu
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 
 /**
  * JVM tests for the proot exit-255 failure mapper — every 255 must produce
@@ -91,75 +89,6 @@ class ProotFailureMapperTest {
         assertEquals(ProotFailureMapper.DETAIL_TAIL_LINES, tailLines.size)
         tailLines.forEach { assertTrue(it.length <= 205) }
     }
-}
-
-/** JVM tests for the shared APT sources writer used by install + import. */
-class AptSourcesTest {
-
-    @get:Rule
-    val tmp = TemporaryFolder()
-
-    @Test
-    fun `classic base gets a classic sources list`() {
-        val apt = tmp.newFolder("apt")
-        AptSources.writeFor(apt, "arm64", "jammy").getOrThrow()
-        val text = java.io.File(apt, "sources.list").readText()
-        assertTrue(text.contains("http://ports.ubuntu.com/ubuntu-ports jammy main universe"))
-        assertTrue(text.contains("jammy-updates") && text.contains("jammy-security"))
-    }
-
-    @Test
-    fun `amd64 uses archive ubuntu com`() {
-        val apt = tmp.newFolder("apt2")
-        AptSources.writeFor(apt, "amd64", "noble").getOrThrow()
-        assertTrue(java.io.File(apt, "sources.list").readText().contains("http://archive.ubuntu.com/ubuntu"))
-    }
-
-    @Test
-    fun `existing deb822 file is rewritten in place and sources list neutralized`() {
-        val apt = tmp.newFolder("apt3")
-        val sourcesListD = java.io.File(apt, "sources.list.d").apply { mkdirs() }
-        java.io.File(sourcesListD, "ubuntu.sources").writeText("Types: deb\nURIs: http://old\n")
-        AptSources.writeFor(apt, "arm64", "noble").getOrThrow()
-        val deb822 = java.io.File(sourcesListD, "ubuntu.sources").readText()
-        assertTrue(deb822.contains("URIs: http://ports.ubuntu.com/ubuntu-ports"))
-        assertTrue(deb822.contains("Suites: noble noble-updates noble-security"))
-        assertTrue(java.io.File(apt, "sources.list").readText().contains("# Configured by OpenChat"))
-    }
-
-    @Test
-    fun `hasActiveSources distinguishes raw base from configured backup`() {
-        val apt = tmp.newFolder("apt4")
-        // raw ubuntu-base: no sources at all
-        assertFalse(AptSources.hasActiveSources(apt))
-        // classic active line
-        java.io.File(apt, "sources.list").writeText("# comment\ndeb http://x jammy main\n")
-        assertTrue(AptSources.hasActiveSources(apt))
-        // empty classic + deb822 active
-        java.io.File(apt, "sources.list").writeText("# nothing active\n")
-        assertFalse(AptSources.hasActiveSources(apt))
-        val d822 = java.io.File(apt, "sources.list.d").apply { mkdirs() }
-        java.io.File(d822, "ubuntu.sources").writeText("Types: deb\nURIs: http://x\n")
-        assertTrue(AptSources.hasActiveSources(apt))
-    }
-
-    @Test
-    fun `codename from os-release handles quotes`() {
-        val codename = AptSources.codenameFromOsRelease(
-            "NAME=\"Ubuntu\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\n",
-        )
-        assertEquals("noble", codename)
-        assertEquals(null, AptSources.codenameFromOsRelease("ID=ubuntu\n"))
-    }
-
-    @Test
-    fun `uname machine maps to ubuntu arch`() {
-        assertEquals("arm64", AptSources.archFromUname("aarch64"))
-        assertEquals("amd64", AptSources.archFromUname("x86_64"))
-        assertEquals("armhf", AptSources.archFromUname("armv7l"))
-        assertEquals(null, AptSources.archFromUname("riscv64"))
-    }
-
     @Test
     fun `shared-library signature maps to actionable error`() {
         val lines = listOf(

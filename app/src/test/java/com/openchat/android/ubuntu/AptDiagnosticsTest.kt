@@ -1,5 +1,6 @@
 package com.openchat.android.ubuntu
 
+import com.openchat.android.core.model.RepairAction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

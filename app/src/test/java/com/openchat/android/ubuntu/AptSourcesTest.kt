@@ -109,4 +109,41 @@ class AptSourcesTest {
     fun `missing apt dir is a safe no-op`() {
         assertFalse(AptSources.upgradeToHttps(File(tmp.root, "does-not-exist")))
     }
+
+    // ------------------------------------------------- moved from the former
+    // AptSourcesTest (was inside ProotFailureMapperTest.kt; its http://
+    // expectations belonged to the pre-HTTPS writer).
+
+    @Test
+    fun `hasActiveSources distinguishes raw base from configured backup`() {
+        val apt = tmp.newFolder("apt7")
+        // raw ubuntu-base: no sources at all
+        assertFalse(AptSources.hasActiveSources(apt))
+        // classic active line
+        File(apt, "sources.list").writeText("# comment\ndeb http://x jammy main\n")
+        assertTrue(AptSources.hasActiveSources(apt))
+        // empty classic + deb822 active
+        File(apt, "sources.list").writeText("# nothing active\n")
+        assertFalse(AptSources.hasActiveSources(apt))
+        val d822 = File(apt, "sources.list.d").apply { mkdirs() }
+        File(d822, "ubuntu.sources").writeText("Types: deb\nURIs: http://x\n")
+        assertTrue(AptSources.hasActiveSources(apt))
+    }
+
+    @Test
+    fun `codename from os-release handles quotes`() {
+        val codename = AptSources.codenameFromOsRelease(
+            "NAME=\"Ubuntu\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\n",
+        )
+        assertEquals("noble", codename)
+        assertEquals(null, AptSources.codenameFromOsRelease("ID=ubuntu\n"))
+    }
+
+    @Test
+    fun `uname machine maps to ubuntu arch`() {
+        assertEquals("arm64", AptSources.archFromUname("aarch64"))
+        assertEquals("amd64", AptSources.archFromUname("x86_64"))
+        assertEquals("armhf", AptSources.archFromUname("armv7l"))
+        assertEquals(null, AptSources.archFromUname("riscv64"))
+    }
 }
