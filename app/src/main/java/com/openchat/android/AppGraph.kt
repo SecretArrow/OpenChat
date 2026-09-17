@@ -13,6 +13,7 @@ import com.openchat.android.core.net.Http
 import com.openchat.android.core.storage.JsonStore
 import com.openchat.android.core.storage.SecretStore
 import com.openchat.android.core.storage.SettingsStore
+import com.openchat.android.core.util.ErrorReport
 import com.openchat.android.terminal.TerminalManager
 import com.openchat.android.ubuntu.ProotRunner
 import com.openchat.android.ubuntu.UbuntuInstaller
@@ -50,6 +51,15 @@ object AppGraph {
             appContext = context.applicationContext
             // Warm the shared HTTP client + load persisted stores off the main path.
             Http.client
+            // Every copied error report carries the Ubuntu runtime evidence
+            // (install/apt/proot log + the failing command's output tail) so a
+            // pasted bug report names the real cause (v0.1.13).
+            ErrorReport.registerProvider("Ubuntu runtime log (last 120 lines)") {
+                ubuntu.log.value.takeLast(120)
+            }
+            ErrorReport.registerProvider("Ubuntu failure output tail") {
+                ubuntu.failureTail.value
+            }
             initialized = true
         }
     }

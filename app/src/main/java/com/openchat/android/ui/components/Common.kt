@@ -35,11 +35,13 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.openchat.android.core.model.ErrorInfo
 import com.openchat.android.core.model.RepairAction
+import com.openchat.android.core.util.ErrorReport
 import kotlinx.coroutines.delay
 import java.text.DateFormat
 import java.util.Date
@@ -61,6 +63,10 @@ import java.util.Locale
  * - RETRY button when the error is retryable and [onRetry] provided.
  * - Repair button when [info.repairAction] is a concrete repair and [onRepair] provided.
  * - "Open logs" button when [onOpenLogs] provided.
+ * - "Copy error + logs" button ALWAYS — builds a full [ErrorReport] (device
+ *   identity + this error + every registered log section) onto the clipboard,
+ *   so a bug report carries its own evidence (v0.1.13: users could not copy
+ *   the real apt failure lines from any error surface).
  */
 @Composable
 fun ErrorCard(
@@ -70,6 +76,7 @@ fun ErrorCard(
     onOpenLogs: (() -> Unit)? = null,
 ) {
     if (info == null) return
+    val context = LocalContext.current
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -126,6 +133,15 @@ fun ErrorCard(
                 if (onOpenLogs != null) {
                     OutlinedButton(onClick = onOpenLogs) { Text("Open logs") }
                 }
+                OutlinedButton(onClick = {
+                    val report = ErrorReport.build(context, info)
+                    val ok = ErrorReport.copy(context, report)
+                    android.widget.Toast.makeText(
+                        context,
+                        if (ok) "Error + logs copied" else "Copy failed",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                }) { Text("Copy error + logs") }
             }
         }
     }

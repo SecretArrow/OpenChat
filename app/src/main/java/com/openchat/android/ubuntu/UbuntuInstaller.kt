@@ -162,6 +162,7 @@ class UbuntuInstaller(private val context: Context) {
             File(etc, "resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
             File(etc, "hosts").writeText("127.0.0.1 localhost\n")
             AptSources.writeFor(File(etc, "apt"), arch, variant.codename).getOrThrow()
+            restoreAptTrust(rootfs)
             installSyscallCompat(rootfs)
             Result.success(Unit)
         } catch (e: Exception) {
@@ -177,6 +178,71 @@ class UbuntuInstaller(private val context: Context) {
      * hash-pinned install as [configure]; device-ABI gated internally.
      */
     fun installSyscallCompatForImport(rootfs: File) = installSyscallCompat(rootfs)
+
+    /**
+     * Provisions APT trust material into the rootfs from the APK's pinned
+     * assets (idempotent, every ABI, safe to re-run any time):
+     *
+     *  1. **Ubuntu archive keyring** → `/usr/share/keyrings/ubuntu-archive-keyring.gpg`
+     *     AND `/etc/apt/trusted.gpg.d/ubuntu-archive-keyring.gpg`. The first
+     *     path is what deb822 `Signed-By:` references; the second is what
+     *     classic focal `sources.list` verification uses. Both are rewritten
+     *     whenever the on-disk hash differs from the pinned asset — this heals
+     *     rootfs bases whose keyring predates the 2018 archive signing key
+     *     (the exact `NO_PUBKEY 871920D1991BC93C` → `E: The repository … is
+     *     not signed` failure reported on real devices in v0.1.12).
+     *  2. **Mozilla CA bundle** → `/etc/ssl/certs/ca-certificates.crt`, only
+     *     when the rootfs has none (ubuntu-base ships without it): HTTPS apt
+     *     sources need a trust store, and apt 2.0 (focal) carries the https
+     *     transport natively. When the rootfs already has a CA bundle it is
+     *     left untouched — the authoritative copy belongs to the package
+     *     manager, which keeps it current via `ca-certificates` upgrades.
+     *
+     * Every copied file is verified against its pinned SHA-256 (same trust
+     * rule as every other artifact); a mismatch is a hard failure.
+     *
+     * Provenance of the pinned assets (both fetched from the official pool,
+     * via HTTPS):
+     *  - keyring: ubuntu-keyring 2020.02.11.4 (focal) —
+     *    /usr/share/keyrings/ubuntu-archive-keyring.gpg, contains the 2012
+     *    AND 2018 archive signing keys (871920D1991BC93C verified).
+     *  - CA bundle: ca-certificates 20240203~20.04.1 (focal-updates) — the
+     *    146 mozilla/*.crt sources concatenated, equivalent to what
+     *    update-ca-certificates writes to /etc/ssl/certs/ca-certificates.crt.
+     */
+    fun restoreAptTrust(rootfs: File) {
+        val keyringTargets = listOf(
+            File(rootfs, "usr/share/keyrings/ubuntu-archive-keyring.gpg"),
+            File(rootfs, "etc/apt/trusted.gpg.d/ubuntu-archive-keyring.gpg"),
+        )
+        keyringTargets.forEach { target ->
+            copyAssetIfHashDiffers(KEYRING_ASSET, target, KEYRING_SHA256)
+        }
+        val ca = File(rootfs, "etc/ssl/certs/ca-certificates.crt")
+        if (!ca.isFile || ca.length() == 0L) {
+            copyAssetIfHashDiffers(CA_ASSET, ca, CA_BUNDLE_SHA256)
+        }
+    }
+
+    /**
+     * Copies [assetPath] from the APK into [target] unless the file already
+     * matches [sha256]. The written copy is re-verified; a mismatch deletes
+     * the file and fails hard (never leaves an untrusted artifact in place).
+     */
+    private fun copyAssetIfHashDiffers(assetPath: String, target: File, sha256: String) {
+        if (target.isFile && Checksums.sha256(target).equals(sha256, ignoreCase = true)) return
+        target.parentFile?.mkdirs()
+        context.assets.open(assetPath).use { ins ->
+            if (target.exists()) target.delete()
+            FileOutputStream(target).use { fos -> ins.copyTo(fos, 64 * 1024) }
+        }
+        val actual = Checksums.sha256(target)
+        if (!actual.equals(sha256, ignoreCase = true)) {
+            target.delete()
+            throw IOException("$assetPath SHA-256 mismatch after copy — expected $sha256, got $actual")
+        }
+        target.setReadable(true, false)
+    }
 
     /**
      * Installs the guest syscall-compat preload into the rootfs (x86_64
@@ -235,7 +301,7 @@ class UbuntuInstaller(private val context: Context) {
         onLog: (String) -> Unit,
     ): Result<Unit> {
         onLog("apt-get update…")
-        runStep(execStreamFn, "apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update")
+        runStep(execStreamFn, "apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update")
             .getOrElse { return Result.failure(it) }
         onLog("Installing curl, ca-certificates, xz-utils, git, python3, python3-pip, wget, procps, sudo…")
         runStep(
@@ -244,7 +310,7 @@ class UbuntuInstaller(private val context: Context) {
             // mobile networks); per-fetch, so a mirror blip does not kill the
             // whole install. Genuine errors still fail the step honestly.
             "DEBIAN_FRONTEND=noninteractive apt-get install -y " +
-                "-o Acquire::Retries=3 -o Acquire::http::Timeout=60 " +
+                "-o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 " +
                 "curl ca-certificates xz-utils git python3 python3-pip wget procps sudo",
         ).getOrElse { return Result.failure(it) }
         onLog("Base tools installed")
@@ -389,5 +455,19 @@ class UbuntuInstaller(private val context: Context) {
          *  with a linkat-blocking seccomp filter: old shim RC=10, new RC=0). */
         const val COMPAT_LIB_SHA256 =
             "d700b02fd90775188ce8099ab3ebee225e3bb83f0f10a48aa47b2f32949a55cf"
+
+        /** assets/ubuntu/keyrings/ubuntu-archive-keyring.gpg — ubuntu-keyring
+         *  2020.02.11.4 (focal), /usr/share/keyrings/ubuntu-archive-keyring.gpg;
+         *  contains the 2012 + 2018 Ubuntu archive signing keys. */
+        const val KEYRING_ASSET = "ubuntu/keyrings/ubuntu-archive-keyring.gpg"
+        const val KEYRING_SHA256 =
+            "1a4dd63e5c76728960a2edddae22e2e0fc53df8e8b87806deb971030ac704eb0"
+
+        /** assets/ubuntu/ca/ca-certificates.crt — 146 mozilla certs from
+         *  ca-certificates 20240203~20.04.1 (focal-updates), concatenated
+         *  exactly as update-ca-certificates would write the bundle. */
+        const val CA_ASSET = "ubuntu/ca/ca-certificates.crt"
+        const val CA_BUNDLE_SHA256 =
+            "6d84ab71cb726c0641b0af84303c316e3fa50db941dc8507d09045eb2fa5d238"
     }
 }

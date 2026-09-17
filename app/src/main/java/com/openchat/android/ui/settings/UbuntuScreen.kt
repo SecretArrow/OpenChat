@@ -46,6 +46,7 @@ import com.openchat.android.ui.components.ErrorCard
 import com.openchat.android.ui.components.StatusPill
 import com.openchat.android.ui.components.formatDate
 import com.openchat.android.ui.nav.Routes
+import com.openchat.android.core.util.ErrorReport
 import kotlinx.coroutines.launch
 
 /**
@@ -378,6 +379,15 @@ fun UbuntuScreen(nav: NavHostController) {
                         .padding(8.dp),
                 )
             }
+            OutlinedButton(onClick = {
+                val report = ErrorReport.build(
+                    AppGraph.appContext,
+                    errorInfo,
+                    listOf("Ubuntu log (last 300 lines)" to log.takeLast(300)),
+                )
+                val ok = ErrorReport.copy(AppGraph.appContext, report)
+                toast(if (ok) "Log + error report copied" else "Copy failed")
+            }) { Text("Copy log + error report") }
             Spacer(Modifier.height(24.dp))
         }
     }

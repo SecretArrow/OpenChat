@@ -552,6 +552,10 @@ class UbuntuRuntime(
                 // syscall-compat preload just like a fresh install does
                 // (legacy glibc file syscalls get ENOSYS under the app filter).
                 installer.installSyscallCompatForImport(rootfs)
+                // Imported rootfs also need the pinned keyring + CA bundle:
+                // raw ubuntu-base tarballs may carry an outdated archive keyring
+                // and no CA store at all (HTTPS sources would fail to verify).
+                installer.restoreAptTrust(rootfs)
             }
 
             setState(UbuntuState.IMPORTING, "Running smoke test…", 95)
@@ -1031,41 +1035,83 @@ class UbuntuRuntime(
                 } else {
                     // Non-zero guest command failure: surface the real output tail
                     // with the error so the cause is visible without opening the log.
-                    Result.failure(
-                        ErrorInfoException(
-                            ErrorInfo(
-                                title = "'$cmd' exited with code $code",
-                                detail = ProotFailureMapper.withTail("The command failed (exit $code).", _failureTail.value),
-                                causes = listOf(
-                                    "The command inside the rootfs reported an error",
-                                    "The full output is shown above and in the log below",
-                                ),
-                                suggestions = listOf(
-                                    "Read the output tail — apt prints the failing line explicitly",
-                                    "Run Repair to rebuild partial package state (apt-get -f install)",
-                                    "If it repeats every attempt, run diagnostics and report the output",
-                                ),
-                                retryable = true,
+                    // Signature failures get a dedicated, actionable card — after the
+                    // automatic keyring/HTTPS repair this is the honest dead end.
+                    val failureInfo = if (AptDiagnostics.isSignatureFailure(_failureTail.value)) {
+                        AptDiagnostics.signatureErrorInfo(_failureTail.value)
+                    } else {
+                        ErrorInfo(
+                            title = "'$cmd' exited with code $code",
+                            detail = ProotFailureMapper.withTail("The command failed (exit $code).", _failureTail.value),
+                            causes = listOf(
+                                "The command inside the rootfs reported an error",
+                                "The full output is shown above and in the log below",
                             ),
-                        ),
-                    )
+                            suggestions = listOf(
+                                "Read the output tail — apt prints the failing line explicitly",
+                                "Run Repair to rebuild partial package state (apt-get -f install)",
+                                "If it repeats every attempt, run diagnostics and report the output",
+                            ),
+                            retryable = true,
+                        )
+                    }
+                    Result.failure(ErrorInfoException(failureInfo))
                 }
             },
             onFailure = { Result.failure(it) },
         )
 
     /**
-     * `apt-get update` with transport-level retries plus one full retry pass —
-     * transient DNS/mirror failures are the most common non-storage cause of
-     * failed installs/updates on mobile networks.
+     * `apt-get update` with layered self-healing (v0.1.13):
+     *
+     *  1. Sources upgrade: legacy plain-HTTP official mirrors are rewritten
+     *     to HTTPS before the first attempt (transparent proxies on real
+     *     networks answer HTTP with their own content — the exact cause of
+     *     the reported `repository … is not signed` failures).
+     *  2. First attempt; a transient failure retries once after 3s.
+     *  3. Signature failure (`NO_PUBKEY` / `is not signed` / GPG error):
+     *     re-provision the pinned Ubuntu archive keyring + CA bundle from the
+     *     APK assets, clear the cached lists, and retry — this heals rootfs
+     *     bases whose keyring predates the 2018 archive signing key.
+     *  4. Whatever still fails surfaces honestly with the real apt output
+     *     ([runChecked] attaches the signature-aware ErrorInfo).
      */
     private suspend fun runAptUpdate(): Result<Unit> {
-        val cmd = "apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update"
+        upgradeAptSourcesToHttps()
+        val cmd = "apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update"
         val first = runChecked(cmd)
         if (first.isSuccess) return first
+        val tail = _failureTail.value
+        if (AptDiagnostics.isSignatureFailure(tail)) {
+            addLog("[warn] APT signature verification failed (NO_PUBKEY / 'is not signed') — " +
+                "restoring the pinned Ubuntu archive keyring + CA bundle, clearing cached lists, retrying")
+            val trustRestored = runCatching { installer.restoreAptTrust(File(rootfsDir())) }
+                .onFailure { addLog("[warn] keyring restore failed: ${it.message ?: it.javaClass.simpleName}") }
+                .isSuccess
+            if (trustRestored) {
+                runChecked("rm -rf /var/lib/apt/lists/*")
+                val repaired = runChecked(cmd)
+                if (repaired.isSuccess) {
+                    addLog("APT signature repair succeeded — repository metadata now verifies")
+                    return repaired
+                }
+                return repaired // honest failure with the signature-aware error below
+            }
+        }
         addLog("[warn] apt-get update failed once — retrying after 3s (transient network/mirror failures are common)")
         delay(3000)
         return runChecked(cmd)
+    }
+
+    /** Rewrites legacy HTTP official-mirror sources to HTTPS (idempotent). */
+    private fun upgradeAptSourcesToHttps() {
+        runCatching {
+            val changed = AptSources.upgradeToHttps(File(rootfsDir(), "etc/apt"))
+            if (changed) {
+                addLog("APT sources upgraded to https:// (protects repository verification " +
+                    "against proxies/portals that tamper with plain-HTTP mirror traffic)")
+            }
+        }.onFailure { addLog("[warn] APT sources https upgrade failed: ${it.message ?: it.javaClass.simpleName}") }
     }
 
     /**
