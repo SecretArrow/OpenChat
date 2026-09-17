@@ -31,13 +31,13 @@ object AptDiagnostics {
         "NO_PUBKEY", // signature made with a key absent from the keyring
         "is not signed", // apt refused the repository outright
         "GPG error:", // generic apt prefix for signature problems
-        "Clearsigned file", // InRelease replaced by non-OpenPGP content
+        "Clearsigned", // InRelease replaced by non-OpenPGP content
         "couldn't be verified", // "The following signatures couldn't be verified…"
         "could not be verified", // variant wording across apt versions
         "EXPKEYSIG", // signature key expired
         "REVKEYSIG", // signature key revoked
-        "InRelease is not valid yet", // clock far behind / premature metadata
-        "Release file expired", // clock far ahead / stale mirror
+        "is not valid yet", // clock far behind / premature metadata
+        "is expired", // clock far ahead / stale mirror
     )
 
     /** True when any captured line indicates an apt signature verification failure. */

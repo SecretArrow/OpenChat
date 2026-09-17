@@ -33,15 +33,27 @@ class AptDiagnosticsTest {
             "Err:1 http://archive.ubuntu.com/ubuntu focal InRelease",
             "  Clearsigned file isn't valid, got 'N:  Welcome to the captive portal'",
         )
-        assertTrue(AptDiagnostics.isSignatureFailure(lines))
+        assertTrue(
+            "classifier must detect 'Clearsigned' marker in: $lines",
+            AptDiagnostics.isSignatureFailure(lines),
+        )
     }
 
     @Test
     fun `expired release is detected`() {
-        assertTrue(AptDiagnostics.isSignatureFailure(listOf("E: Release file for … focal InRelease is expired")))
         assertTrue(
+            "classifier must detect 'is expired' wording",
             AptDiagnostics.isSignatureFailure(
-                listOf("E: InRelease is not valid yet (invalid for another 12h)"),
+                listOf(
+                    "E: Release file for https://ports.ubuntu.com/ubuntu-ports focal " +
+                        "InRelease is expired (invalid since 2023-10-01 00:00:00)",
+                ),
+            ),
+        )
+        assertTrue(
+            "classifier must detect 'is not valid yet' wording",
+            AptDiagnostics.isSignatureFailure(
+                listOf("E: Release file for https://… focal InRelease is not valid yet (valid for another 12h)"),
             ),
         )
     }
