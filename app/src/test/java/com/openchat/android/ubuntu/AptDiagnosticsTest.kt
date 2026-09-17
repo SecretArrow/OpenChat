@@ -33,9 +33,15 @@ class AptDiagnosticsTest {
             "Err:1 http://archive.ubuntu.com/ubuntu focal InRelease",
             "  Clearsigned file isn't valid, got 'N:  Welcome to the captive portal'",
         )
+        System.out.println("APT-DIAG-DEBUG per-line contains:")
+        lines.forEach { l ->
+            System.out.println("APT-DIAG-DEBUG line=$l -> clearsigned? " + l.contains("Clearsigned", ignoreCase = true))
+        }
+        val result = AptDiagnostics.isSignatureFailure(lines)
+        System.out.println("APT-DIAG-DEBUG result=$result")
         assertTrue(
             "classifier must detect 'Clearsigned' marker in: $lines",
-            AptDiagnostics.isSignatureFailure(lines),
+            result,
         )
     }
 

@@ -41,15 +41,12 @@ object AptDiagnostics {
     )
 
     /** True when any captured line indicates an apt signature verification failure. */
-    fun isSignatureFailure(lines: List<String>): Boolean {
-        if (lines.isEmpty()) return false
-        val haystack = lines.joinToString("\n").lowercase()
-        return SIGNATURE_MARKERS.any { marker -> marker in haystack }
-    }
+    fun isSignatureFailure(lines: List<String>): Boolean =
+        lines.any { line -> SIGNATURE_MARKERS.any { marker -> line.contains(marker, ignoreCase = true) } }
 
     /** The signature-bearing lines from the tail, for the error detail. */
     fun signatureLines(lines: List<String>, max: Int = 8): List<String> =
-        lines.filter { line -> SIGNATURE_MARKERS.any { it.lowercase() in line.lowercase() } }
+        lines.filter { line -> SIGNATURE_MARKERS.any { line.contains(it, ignoreCase = true) } }
             .takeLast(max)
 
     /**
