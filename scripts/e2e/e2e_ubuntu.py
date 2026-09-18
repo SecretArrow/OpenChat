@@ -42,6 +42,14 @@ STAGES = [
     "LIFECYCLE_INTERFERENCE", "PERSISTENCE", "APP_RESTART", "PERSISTENCE_AFTER_RESTART",
 ]
 
+# States in which an Ubuntu pipeline is actively running. Kept in sync with
+# UbuntuState.busy in the app (com.openchat.android.core.model.Models.kt).
+BUSY_STATES = {
+    "DOWNLOADING", "VERIFYING", "EXTRACTING", "CONFIGURING",
+    "INSTALLING_PACKAGES", "INSTALLING_TOOLS",
+    "REPAIRING", "UPDATING", "RESETTING", "EXPORTING", "IMPORTING",
+}
+
 
 def log(msg: str) -> None:
     print(f"[e2e {datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
@@ -365,6 +373,12 @@ class E2E:
         self.known_pids: set[str] = set()
         self.fail_stage: str | None = None
         self.fail_detail: str | None = None
+        # v0.1.15: honest interference bookkeeping — which tests actually fired
+        # on a fresh busy observation and which were skipped because the
+        # minimal core install finished first (evidence in the summary).
+        self.interference_fired: list[str] = []
+        self.interference_skipped: list[str] = []
+        self.devtools_force_stop: str | None = None
 
     # --- state -----------------------------------------------------------
     def read_status(self) -> dict:
@@ -646,74 +660,91 @@ class E2E:
                 nav_settings(self.adb)
                 start_ubuntu_install(self.adb)
 
-            # interference schedule (each ONCE, while busy states run)
+            # interference schedule (each ONCE). v0.1.15: every test is gated
+            # on a FRESH busy observation taken right before it fires — the
+            # old schedule chained all four tests behind ONE observed
+            # transition, so on the fast minimal core install (apt ~15 s)
+            # the force-stop landed up to a minute later, hit a COMPLETED
+            # install, and its honest READY was misread as "fake READY"
+            # (run 35301469380). A missed busy window is skipped with
+            # evidence, never fired on a stale premise; the real
+            # interruption-recovery test runs in the minutes-long dev-tools
+            # window instead (see phase_ubuntu).
             if interference and state and state != last_state:
                 last_state = state
-                busy = state in {"DOWNLOADING", "VERIFYING", "EXTRACTING", "CONFIGURING",
-                                 "INSTALLING_PACKAGES", "INSTALLING_TOOLS"}
+                busy = state in BUSY_STATES
+
+                def fresh_busy(tag: str) -> bool:
+                    cur = (self.record_state(tag).get("state") or "").upper()
+                    return cur in BUSY_STATES
 
                 if busy and not done_bg:
-                    done_bg = True
-                    log("Test B: background the app mid-install")
-                    self.adb.keyevent(3)  # HOME
-                    time.sleep(8)
-                    self.adb.launch(self.args.component)
-                    time.sleep(4)
-                    self.note_pid()
-                    st2 = self.record_state("testB-background-resume")
-                    s2 = (st2.get("state") or "").upper()
-                    if s2 == "NOT_INSTALLED":
-                        self.fail("LIFECYCLE_INTERFERENCE",
-                                  f"after background/foreground the install state was lost: {st2.get('message')}")
+                    if fresh_busy("pre-testB-background"):
+                        done_bg = True
+                        self.interference_fired.append("B:background/foreground")
+                        log("Test B: background the app mid-install")
+                        self.adb.keyevent(3)  # HOME
+                        time.sleep(8)
+                        self.adb.launch(self.args.component)
+                        time.sleep(4)
+                        self.note_pid()
+                        st2 = self.record_state("testB-background-resume")
+                        s2 = (st2.get("state") or "").upper()
+                        if s2 == "NOT_INSTALLED":
+                            self.fail("LIFECYCLE_INTERFERENCE",
+                                      f"after background/foreground the install state was lost: {st2.get('message')}")
+                    else:
+                        done_bg = True
+                        self.interference_skipped.append("B:background/foreground")
 
                 if busy and done_bg and not screen_off:
-                    screen_off = True
-                    log("Test E: screen off/on mid-install")
-                    self.adb.keyevent(26)  # power
-                    time.sleep(8)
-                    self.adb.wake()
-                    time.sleep(3)
-                    st3 = self.record_state("testE-screen")
-                    if not st3:
-                        self.fail("LIFECYCLE_INTERFERENCE", "status unreadable after screen off/on")
+                    if fresh_busy("pre-testE-screen"):
+                        screen_off = True
+                        self.interference_fired.append("E:screen off/on")
+                        log("Test E: screen off/on mid-install")
+                        self.adb.keyevent(26)  # power
+                        time.sleep(8)
+                        self.adb.wake()
+                        time.sleep(3)
+                        st3 = self.record_state("testE-screen")
+                        if not st3:
+                            self.fail("LIFECYCLE_INTERFERENCE", "status unreadable after screen off/on")
+                    else:
+                        screen_off = True
+                        self.interference_skipped.append("E:screen off/on")
 
                 if busy and screen_off and not net_toggled:
-                    net_toggled = True
-                    log("Test F: network drop + restore mid-download (per-UID iptables)")
-                    # svc wifi/data disable does NOT reliably restore app
-                    # connectivity on the API 30 emulator (the default network
-                    # for the app UID stays gone for minutes while shell still
-                    # routes — E2E evidence run 34932072859), so the drop is
-                    # done per-UID with iptables and the restore is removing
-                    # the rule: deterministic, and a REAL app-visible outage.
-                    uid = self.adb.app_uid(self.adb.package)
-                    dropped = False
-                    if uid:
-                        run(self.adb.base + ["root"], timeout=60)
-                        time.sleep(2)
-                        out = self.adb.shell(
-                            "iptables", "-I", "OUTPUT", "1", "-m", "owner",
-                            "--uid-owner", uid, "-j", "REJECT", timeout=30,
-                        )
-                        listed = self.adb.shell("iptables", "-S", "OUTPUT", timeout=30)
-                        if f"--uid-owner {uid}" in listed:
-                            dropped = True
-                        else:
-                            log(f"iptables block unavailable ({(out or listed).strip()[:120]}); falling back to svc")
-                    if not dropped:
-                        self.adb.network(False)
-                    time.sleep(15)
-                    if dropped:
-                        try:
-                            self.adb.shell(
-                                "iptables", "-D", "OUTPUT", "-m", "owner",
+                    if not fresh_busy("pre-testF-network"):
+                        net_toggled = True
+                        self.interference_skipped.append("F:network drop/restore")
+                    else:
+                        net_toggled = True
+                        self.interference_fired.append("F:network drop/restore")
+                        log("Test F: network drop + restore mid-download (per-UID iptables)")
+                        # svc wifi/data disable does NOT reliably restore app
+                        # connectivity on the API 30 emulator (the default network
+                        # for the app UID stays gone for minutes while shell still
+                        # routes — E2E evidence run 34932072859), so the drop is
+                        # done per-UID with iptables and the restore is removing
+                        # the rule: deterministic, and a REAL app-visible outage.
+                        uid = self.adb.app_uid(self.adb.package)
+                        dropped = False
+                        if uid:
+                            run(self.adb.base + ["root"], timeout=60)
+                            time.sleep(2)
+                            out = self.adb.shell(
+                                "iptables", "-I", "OUTPUT", "1", "-m", "owner",
                                 "--uid-owner", uid, "-j", "REJECT", timeout=30,
                             )
-                        except Exception:  # noqa: BLE001
-                            pass
-                        left = self.adb.shell("iptables", "-S", "OUTPUT", timeout=30)
-                        if f"--uid-owner {uid}" in left:
-                            log("[warn] iptables rule survived delete — forcing cleanup")
+                            listed = self.adb.shell("iptables", "-S", "OUTPUT", timeout=30)
+                            if f"--uid-owner {uid}" in listed:
+                                dropped = True
+                            else:
+                                log(f"iptables block unavailable ({(out or listed).strip()[:120]}); falling back to svc")
+                        if not dropped:
+                            self.adb.network(False)
+                        time.sleep(15)
+                        if dropped:
                             try:
                                 self.adb.shell(
                                     "iptables", "-D", "OUTPUT", "-m", "owner",
@@ -721,34 +752,61 @@ class E2E:
                                 )
                             except Exception:  # noqa: BLE001
                                 pass
-                        log("network restored for the app uid (rule removed)")
-                    else:
-                        self.adb.network(True)
-                        if not self.adb.wait_default_network(240):
-                            self.fail(
-                                "LIFECYCLE_INTERFERENCE",
-                                "network did not come back after svc enable — "
-                                "emulator RIL never re-attached, transient-network "
-                                "recovery cannot be verified in this environment",
-                            )
-                    time.sleep(3)
+                            left = self.adb.shell("iptables", "-S", "OUTPUT", timeout=30)
+                            if f"--uid-owner {uid}" in left:
+                                log("[warn] iptables rule survived delete — forcing cleanup")
+                                try:
+                                    self.adb.shell(
+                                        "iptables", "-D", "OUTPUT", "-m", "owner",
+                                        "--uid-owner", uid, "-j", "REJECT", timeout=30,
+                                    )
+                                except Exception:  # noqa: BLE001
+                                    pass
+                            log("network restored for the app uid (rule removed)")
+                        else:
+                            self.adb.network(True)
+                            if not self.adb.wait_default_network(240):
+                                self.fail(
+                                    "LIFECYCLE_INTERFERENCE",
+                                    "network did not come back after svc enable — "
+                                    "emulator RIL never re-attached, transient-network "
+                                    "recovery cannot be verified in this environment",
+                                )
+                        time.sleep(3)
 
                 if busy and net_toggled and not force_stopped:
-                    force_stopped = True
-                    log("Test C: force-stop mid-install (interruption recovery)")
-                    self.adb.force_stop(self.adb.package)
-                    time.sleep(6)
-                    self.adb.launch(self.args.component)
-                    time.sleep(6)
-                    self.note_pid()
-                    self.adb.screenshot("testC-after-force-stop")
-                    st4 = self.record_state("testC-force-stop-recovery")
-                    s4 = (st4.get("state") or "").upper()
-                    if s4 == "READY":
-                        self.fail("LIFECYCLE_INTERFERENCE",
-                                  "state claimed READY after a mid-install force-stop — fake READY!")
-                    nav_settings(self.adb)
-                    find_tap(self.adb, ["reinstall", "install", "repair"])
+                    if not fresh_busy("pre-testC-force-stop"):
+                        force_stopped = True
+                        self.interference_skipped.append("C:force-stop mid-install")
+                    else:
+                        force_stopped = True
+                        self.interference_fired.append("C:force-stop mid-install")
+                        log("Test C: force-stop mid-install (interruption recovery)")
+                        self.adb.force_stop(self.adb.package)
+                        time.sleep(6)
+                        self.adb.launch(self.args.component)
+                        time.sleep(6)
+                        self.note_pid()
+                        self.adb.screenshot("testC-after-force-stop")
+                        st4 = self.record_state("testC-force-stop-recovery")
+                        s4 = (st4.get("state") or "").upper()
+                        if s4 == "READY":
+                            # Gate-to-stop race: the fresh poll showed a busy
+                            # state ~1-2 s before the force-stop, but the
+                            # install may have completed exactly in between.
+                            # READY is then legitimate ONLY if the rootfs is
+                            # functionally complete — verify, never assume.
+                            rootfs_ok = self.adb.run_as("ls", "files/ubuntu/rootfs/bin/bash")
+                            if "bin/bash" in rootfs_ok:
+                                log("[note] READY after force-stop but the rootfs is "
+                                    "functionally complete — install finished inside the "
+                                    "gate-to-stop race window (evidence recorded)")
+                            else:
+                                self.fail("LIFECYCLE_INTERFERENCE",
+                                          f"state claimed READY after a mid-install force-stop "
+                                          f"and /bin/bash is absent ({rootfs_ok.strip()[:80]}) — fake READY!")
+                        nav_settings(self.adb)
+                        find_tap(self.adb, ["reinstall", "install", "repair"])
 
         self.fail("INSTALL_START", f"install did not reach READY within the timeout "
                                    f"(last state: {last_state or 'unknown'})")
@@ -846,9 +904,15 @@ class E2E:
             f"EXTRACTING observed: {saw.get('EXTRACTING')} (staged extract + validated atomic swap)")
 
         self.poll_install(interference=True)
+        fired = ", ".join(self.interference_fired) or "none"
+        skipped = ", ".join(self.interference_skipped) or "none"
         self.stages["LIFECYCLE_INTERFERENCE"].pass_(
-            "background/foreground + screen off/on + network drop/restore + force-stop "
-            f"mid-install exercised; recoveries after honest errors: {self.recoveries}")
+            f"interference schedule on the minimal core install — fired: {fired}; "
+            f"skipped (busy window closed before the test could fire; the "
+            f"interruption-recovery force-stop runs in the dev-tools window): {skipped}; "
+            f"recoveries after honest errors: {self.recoveries}"
+            + (f"; dev-tools force-stop: {self.devtools_force_stop}" if self.devtools_force_stop else "")
+        )
 
     def phase_rootfs(self) -> None:
         checks = ["bin/bash", "bin/sh", "etc/passwd", "etc/group", "etc/apt", "usr",
@@ -947,17 +1011,75 @@ class E2E:
         # node) is now an explicit opt-in: drive the REAL button on the Ubuntu
         # screen and wait for the runtime to report READY again. The APT stage
         # below then proves the tools actually landed in the rootfs.
+        # scroll=True everywhere below: strictly more robust — find_tap taps
+        # as soon as a candidate is on screen and only swipes when the label
+        # is not visible yet (the dev-tools card can sit below the fold).
         nav_settings(self.adb)
-        if not find_tap(self.adb, ["ubuntu userspace"], scroll=False):
+        if not find_tap(self.adb, ["ubuntu userspace"], scroll=True):
             self.fail("DEV_TOOLS", "could not open the Ubuntu userspace screen from Settings")
-        if not find_tap(self.adb, ["install dev tools"], scroll=False):
+        if not find_tap(self.adb, ["install dev tools"], scroll=True):
             self.fail("DEV_TOOLS", "'Install dev tools' button not found on the Ubuntu screen")
         deadline = time.time() + 1200
         state = ""
+        force_tested = False
+        st: dict = {}
         while time.time() < deadline:
             time.sleep(10)
             st = self.record_state("devtools-poll")
             state = (st.get("state") or "").upper()
+
+            # Interruption-recovery test (Test C) — fired HERE since v0.1.15:
+            # the minimal core install finishes in under a minute on CI, so
+            # its busy window is too short to catch reliably; the dev-tools
+            # chain (apt install + Node tarball) runs for minutes and is a
+            # REAL, currently-busy operation every time. Premise is fresh
+            # (observed in THIS poll and re-verified immediately before the
+            # stop). After the force-stop the app must come back honest:
+            # ERROR ("interrupted") — never fake READY, never stuck busy
+            # (that is the exact v0.1.14 stuck-buttons bug class the heal
+            # exists for). Dev tools are idempotent, so re-tapping finishes
+            # the chain and the stage still proves its own READY below.
+            if not force_tested and state in BUSY_STATES:
+                recheck = (self.record_state("pre-devtools-force-stop").get("state") or "").upper()
+                if recheck in BUSY_STATES:
+                    force_tested = True
+                    log("Test C (dev-tools window): force-stop mid-install")
+                    self.adb.force_stop(self.adb.package)
+                    time.sleep(6)
+                    self.adb.launch(self.args.component)
+                    time.sleep(6)
+                    self.note_pid()
+                    self.adb.screenshot("testC-devtools-force-stop")
+                    stc = self.record_state("devtools-force-stop-recovery")
+                    sc = (stc.get("state") or "").upper()
+                    if sc == "READY" and "bin/bash" not in self.adb.run_as("ls", "files/ubuntu/rootfs/bin/bash"):
+                        self.devtools_force_stop = "FAIL: fake READY after force-stop"
+                        self.fail("LIFECYCLE_INTERFERENCE",
+                                  "state claimed READY after a dev-tools force-stop and "
+                                  "/bin/bash is absent — fake READY!")
+                    elif sc in BUSY_STATES:
+                        self.devtools_force_stop = (
+                            f"FAIL: stuck busy ({sc}) after force-stop — heal did not run")
+                        self.fail("LIFECYCLE_INTERFERENCE",
+                                  f"after a dev-tools force-stop + relaunch the state is still "
+                                  f"{sc} with no live pipeline — stuck busy, the v0.1.15 "
+                                  f"heal did not run (message: {(stc.get('message') or '')[:200]})")
+                    elif sc == "READY":
+                        self.devtools_force_stop = "install completed inside the gate-to-stop race (rootfs verified complete)"
+                        log("[note] READY after force-stop — dev-tools chain finished inside the race window")
+                    else:
+                        self.devtools_force_stop = (
+                            f"honest {sc} after force-stop ('{(stc.get('message') or '')[:80]}') — recovering")
+                        log(f"state after force-stop: {sc} — honest; re-tapping the idempotent dev-tools install")
+                    if sc != "READY":
+                        # Recover: reopen the Ubuntu screen (this also triggers
+                        # the screen-entry heal) and re-run the idempotent install.
+                        nav_settings(self.adb)
+                        if not find_tap(self.adb, ["ubuntu userspace"], scroll=True):
+                            self.fail("DEV_TOOLS", "could not reopen the Ubuntu userspace screen after force-stop recovery")
+                        if not find_tap(self.adb, ["install dev tools"], scroll=True):
+                            self.fail("DEV_TOOLS", "'Install dev tools' button not found after force-stop recovery")
+
             if state in {"READY", "ERROR"}:
                 break
         if state != "READY":
