@@ -347,8 +347,15 @@ class UbuntuInstaller(private val context: Context) {
         val fileName = "node-$NODE_VERSION-linux-$nodeArch.tar.xz"
         val tarballUrl = "https://nodejs.org/dist/$NODE_VERSION/$fileName"
 
-        val probe = execFn("test -x /opt/node/bin/node")
-        if (probe.isSuccess) {
+        // Output-marker probe, NOT exit-code: runCommand (execFn) resolves a
+        // finished process to success regardless of its exit code, so a bare
+        // `test -x` "succeeded" even when node was MISSING — the probe always
+        // passed, node never installed, and every dev-tools run died later in
+        // the smoke check ('unexpected output: git version 2.25.1', E2E run
+        // 35306296525). `test … && echo` only prints the marker when node
+        // really exists and is executable.
+        val probe = execFn("test -x /opt/node/bin/node && echo NODE_PRESENT")
+        if (probe.getOrDefault("").contains("NODE_PRESENT")) {
             onLog("Node.js already present at /opt/node — skipping download")
             return Result.success(Unit)
         }

@@ -508,15 +508,24 @@ class UbuntuRuntime(
             installer.installNode(execStreamFn(), execFn(), ::addLog, abi())
                 .getOrElse { return failStep("Node.js installation failed", it) }
             setState(UbuntuState.INSTALLING_TOOLS, "Verifying the tools…", 90)
-            val smoke = runCommand("git --version && python3 -V && node -v")
+            // Per-tool smoke: each command's own output proves it works, and a
+            // missing tool is named in the error instead of surfacing as an
+            // opaque "unexpected output: <first line>" (runCommand resolves a
+            // finished process to success regardless of exit code, so the &&
+            // chain's rc says nothing — the OUTPUT is the evidence).
+            val smoke = runCommand(
+                "echo GIT=$(git --version 2>&1); echo PY=$(python3 -V 2>&1); echo NODE=$(node -v 2>&1)",
+            )
             val smokeOut = smoke.getOrElse { return failStep("Tool verification failed", it) }
-            val ok = smokeOut.contains("git version", ignoreCase = true) &&
-                smokeOut.contains("python", ignoreCase = true) &&
-                smokeOut.contains("v20", ignoreCase = true)
-            if (!ok) {
+            val missing = buildList {
+                if (!Regex("GIT=git version", RegexOption.IGNORE_CASE).containsMatchIn(smokeOut)) add("git")
+                if (!Regex("PY=Python", RegexOption.IGNORE_CASE).containsMatchIn(smokeOut)) add("python3")
+                if (!Regex("NODE=v20\\.", RegexOption.IGNORE_CASE).containsMatchIn(smokeOut)) add("node 20")
+            }
+            if (missing.isNotEmpty()) {
                 return failStep(
-                    "Tool verification failed — unexpected output: " +
-                        (smokeOut.lineSequence().firstOrNull()?.take(200) ?: "(empty)"),
+                    "Tool verification failed — not usable: ${missing.joinToString()} — output: " +
+                        smokeOut.replace('\n', ' ').take(300).ifBlank { "(empty)" },
                     IllegalStateException("dev tools smoke mismatch"),
                 )
             }
