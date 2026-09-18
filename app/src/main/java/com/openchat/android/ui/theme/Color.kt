@@ -34,7 +34,7 @@ object PaletteHex {
     const val DARK_ON_BACKGROUND: Long = 0xFFE6E9EF
     const val DARK_ON_SURFACE: Long = 0xFFDDE2EA
     const val DARK_ON_SURFACE_VARIANT: Long = 0xFFA6AEBD
-    const val DARK_OUTLINE: Long = 0xFF4D5667
+    const val DARK_OUTLINE: Long = 0xFF5A6375
 
     // Light palette
     const val LIGHT_BACKGROUND: Long = 0xFFFAFBFD

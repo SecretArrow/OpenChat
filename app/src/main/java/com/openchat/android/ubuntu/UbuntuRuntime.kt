@@ -761,8 +761,11 @@ class UbuntuRuntime(
                 ErrorInfoException(Errors.ubuntuFailure("An Ubuntu operation is already running — wait for it to finish")),
             )
         }
+        // Captured BEFORE the busy state is set — the cancel handler restores
+        // it (same pattern as export()); declaring it inside try{} would put
+        // it out of scope for the catch block.
+        val prevState = _status.value.state
         try {
-            val prevState = _status.value.state
             setState(UbuntuState.EXPORTING, "Exporting the downloaded base archive…", 5)
             val cache = UbuntuFileSystem.cacheDir(context)
             val tarball = cache.listFiles()
