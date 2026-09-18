@@ -281,7 +281,7 @@ def parse_ui(xml: str) -> list[dict]:
     return nodes
 
 
-def find_tap(adb: Adb, labels: list[str], scroll: bool = True) -> bool:
+def find_tap(adb: Adb, labels: list[str], scroll: bool = True, clickable_only: bool = False) -> bool:
     """Tap the best match for any label (bi-directional scroll).
 
     Match priority:
@@ -291,6 +291,15 @@ def find_tap(adb: Adb, labels: list[str], scroll: bool = True) -> bool:
       4. text node whose label CONTAINS a target word (weakest — status
          labels like 'not installed' contain 'install'; this is why exact
          matches and clickable ancestors must win first, E2E 34862886354)
+
+    clickable_only=True: never tap text nodes — when only text matches are
+    visible, scroll on to find the real control. This exists because labels
+    COLLIDE in the real UI: the Settings home renders the Ubuntu card title
+    "Ubuntu userspace" (text) at the top, while the navigation row of the
+    same name sits below the fold; and the status message 'use "Install dev
+    tools" …' contains the dev-tools button label. Tapping text silently
+    did nothing (run 35303474190: APT failed with 'git: command not found'
+    because dev tools were never opened).
     """
     lw = [x.lower() for x in labels]
 
@@ -301,6 +310,8 @@ def find_tap(adb: Adb, labels: list[str], scroll: bool = True) -> bool:
             return -1
         exact = blob == hit or blob.split()[0] == hit
         clickable = n["clickable"] or "Button" in n["cls"] or "EditText" in n["cls"]
+        if clickable_only and not clickable:
+            return -1
         return (0 if clickable else 1) * 2 + (0 if exact else 1)
 
     for attempt in range(10):
@@ -1011,13 +1022,15 @@ class E2E:
         # node) is now an explicit opt-in: drive the REAL button on the Ubuntu
         # screen and wait for the runtime to report READY again. The APT stage
         # below then proves the tools actually landed in the rootfs.
-        # scroll=True everywhere below: strictly more robust — find_tap taps
-        # as soon as a candidate is on screen and only swipes when the label
-        # is not visible yet (the dev-tools card can sit below the fold).
+        # scroll=True: taps as soon as a candidate is on screen and only
+        # swipes when it is not; clickable_only: the Settings home renders a
+        # TEXT card title 'Ubuntu userspace' above the identically-named nav
+        # row, and the status message quotes "Install dev tools" — tapping
+        # those texts silently did nothing (run 35303474190).
         nav_settings(self.adb)
-        if not find_tap(self.adb, ["ubuntu userspace"], scroll=True):
+        if not find_tap(self.adb, ["ubuntu userspace"], scroll=True, clickable_only=True):
             self.fail("DEV_TOOLS", "could not open the Ubuntu userspace screen from Settings")
-        if not find_tap(self.adb, ["install dev tools"], scroll=True):
+        if not find_tap(self.adb, ["install dev tools"], scroll=True, clickable_only=True):
             self.fail("DEV_TOOLS", "'Install dev tools' button not found on the Ubuntu screen")
         deadline = time.time() + 1200
         state = ""
@@ -1075,9 +1088,9 @@ class E2E:
                         # Recover: reopen the Ubuntu screen (this also triggers
                         # the screen-entry heal) and re-run the idempotent install.
                         nav_settings(self.adb)
-                        if not find_tap(self.adb, ["ubuntu userspace"], scroll=True):
+                        if not find_tap(self.adb, ["ubuntu userspace"], scroll=True, clickable_only=True):
                             self.fail("DEV_TOOLS", "could not reopen the Ubuntu userspace screen after force-stop recovery")
-                        if not find_tap(self.adb, ["install dev tools"], scroll=True):
+                        if not find_tap(self.adb, ["install dev tools"], scroll=True, clickable_only=True):
                             self.fail("DEV_TOOLS", "'Install dev tools' button not found after force-stop recovery")
 
             if state in {"READY", "ERROR"}:
