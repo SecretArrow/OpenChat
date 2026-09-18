@@ -174,6 +174,43 @@ class UbuntuRuntime(
         }
     }
 
+    /**
+     * Entry gate for the idempotent apt-based maintenance ops ([update],
+     * dev-tools install). Unlike [ensureReady] this does NOT require the
+     * persisted state to be READY — only the rootfs to be functionally
+     * intact (bash + proot + installed flag). The v0.1.15 heal honestly
+     * persists ERROR ("use Repair or Reset") after a killed pipeline; if
+     * these ops then demanded READY they could never restart and the
+     * buttons would silently dead-end behind a toast (exactly what E2E run
+     * 35304698625 caught: an interrupted dev-tools install refused every
+     * re-tap while the rootfs was perfectly usable). An interrupted update
+     * or dev-tools run is restartable by design — their cancel messages
+     * promise exactly that.
+     */
+    private fun requireUsableRootfs(): Result<Unit> {
+        val st = _status.value
+        if (st.state.busy) {
+            return Result.failure(
+                ErrorInfoException(Errors.ubuntuFailure("An Ubuntu operation is already running — wait for it to finish")),
+            )
+        }
+        val intact = st.installed &&
+            File(rootfsDir(), "bin/bash").isFile &&
+            UbuntuFileSystem.prootComplete(context)
+        return when {
+            intact -> Result.success(Unit)
+            st.state == UbuntuState.READY -> {
+                setState(UbuntuState.ERROR, "Rootfs or proot is missing — repair required", 0)
+                Result.failure(
+                    ErrorInfoException(
+                        Errors.ubuntuFailure("Ubuntu is marked ready but the rootfs or proot binary is missing"),
+                    ),
+                )
+            }
+            else -> Result.failure(ErrorInfoException(Errors.ubuntuNotReady()))
+        }
+    }
+
     // ----------------------------------------------------------------- install
 
     /**
@@ -407,7 +444,7 @@ class UbuntuRuntime(
     }
 
     private suspend fun updateInner(): Result<Unit> {
-        ensureReady().getOrElse { return Result.failure(it) }
+        requireUsableRootfs().getOrElse { return Result.failure(it) }
         if (!pipelineRunning.compareAndSet(false, true)) {
             return Result.failure(
                 ErrorInfoException(Errors.ubuntuFailure("An Ubuntu operation is already running — wait for it to finish")),
@@ -450,7 +487,7 @@ class UbuntuRuntime(
     }
 
     private suspend fun installDevToolsInner(): Result<Unit> {
-        ensureReady().getOrElse { return Result.failure(it) }
+        requireUsableRootfs().getOrElse { return Result.failure(it) }
         if (!pipelineRunning.compareAndSet(false, true)) {
             return Result.failure(
                 ErrorInfoException(Errors.ubuntuFailure("An Ubuntu operation is already running — wait for it to finish")),
