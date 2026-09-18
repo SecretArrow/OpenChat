@@ -145,7 +145,7 @@ fun OllamaScreen(nav: NavHostController) {
                         "No Ollama servers yet — tap + to add one. Ollama can run on another " +
                             "machine on your LAN; installing it on the phone is not required.",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.outline,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     )
                 }
@@ -200,7 +200,7 @@ fun OllamaScreen(nav: NavHostController) {
                     Text(
                         "Select a server above to manage its models.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp),
                     )
                 }
@@ -211,7 +211,7 @@ fun OllamaScreen(nav: NavHostController) {
                         Text(
                             "No cached model list — tap ↻ to load it from the server, or pull a new model below.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.outline,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 16.dp),
                         )
                     }
@@ -381,7 +381,7 @@ private fun ServerCard(
                 server.baseUrl,
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.outline,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             testResult?.let { r ->
                 Row(
@@ -414,7 +414,7 @@ private fun OllamaModelRow(model: OllamaModel, onRun: () -> Unit, onPull: () -> 
                     model.modifiedAt?.let { append(" · updated ").append(it.take(10)) }
                 },
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = onRun) { Text("Run") }

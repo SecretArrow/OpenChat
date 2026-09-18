@@ -76,7 +76,7 @@ fun ModelsScreen(nav: NavHostController) {
                     "Tap + to add a model (e.g. gpt-4o-mini, claude-sonnet, llama3.1). " +
                         "A model needs a provider — create one under Providers first.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         } else {
@@ -157,7 +157,7 @@ private fun ModelRow(model: AIModel, isDefault: Boolean, onOpen: () -> Unit, onT
                     model.modelName,
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

@@ -86,7 +86,7 @@ fun ProvidersScreen(nav: NavHostController) {
                         "endpoint manually. Models belong to providers, so add one before " +
                         "configuring models.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         } else {
@@ -141,7 +141,7 @@ private fun PresetPickerDialog(
                         "Presets pre-fill Base URL, auth header and endpoints — " +
                             "paste your API key and fetch the model list.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(6.dp))
                 }
@@ -170,7 +170,7 @@ private fun PresetPickerDialog(
                                 first.baseUrl,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = FontFamily.Monospace,
-                                color = MaterialTheme.colorScheme.outline,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -178,7 +178,7 @@ private fun PresetPickerDialog(
                             Text(
                                 "Custom base URL — set your server address",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.outline,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -212,7 +212,7 @@ private fun ProviderRow(provider: Provider, onOpen: () -> Unit, onToggle: (Boole
                     "${provider.type.name} · ${provider.baseUrl}",
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

@@ -432,7 +432,7 @@ fun FilesScreen() {
                                         Text(
                                             "Empty",
                                             style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.outline,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.padding(16.dp),
                                         )
                                     }
@@ -703,7 +703,7 @@ private fun FileRow(
             Text(
                 if (entry.isDir) "folder" else "${humanizeBytes(entry.size)} · ${formatDate(entry.lastModified)}",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         IconButton(onClick = onMenu) {

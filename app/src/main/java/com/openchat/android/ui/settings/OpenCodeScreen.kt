@@ -136,7 +136,7 @@ fun OpenCodeScreen(nav: NavHostController) {
                         fontFamily = FontFamily.Monospace,
                     )
                     status.message?.let {
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

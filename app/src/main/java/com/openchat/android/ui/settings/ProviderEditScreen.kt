@@ -411,7 +411,7 @@ fun ProviderEditScreen(nav: NavHostController, providerId: String, presetId: Str
                 "Lists every model the endpoint offers (GET /models) so you can tick " +
                     "the ones you want — no manual model ids needed.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             if (!isNew) {

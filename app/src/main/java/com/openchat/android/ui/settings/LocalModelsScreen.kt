@@ -148,7 +148,7 @@ fun LocalModelsScreen(nav: NavHostController) {
                                         "model loads — unload happens when you switch models or " +
                                         "free memory.",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.outline,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                             Switch(
@@ -173,7 +173,7 @@ fun LocalModelsScreen(nav: NavHostController) {
                                 "exists. Keep ≈model size + 350 MB RAM free. The 32-bit " +
                                 "build (armeabi-v7a) cannot address models over ≈1.5 GB.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.outline,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(12.dp),
                         )
                     }

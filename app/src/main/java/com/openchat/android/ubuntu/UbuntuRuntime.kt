@@ -47,10 +47,14 @@ class ErrorInfoException(val info: ErrorInfo) : Exception(info.detail)
  * Owns the Ubuntu userspace lifecycle (spec §3–4):
  *
  *  - [install]: pinned rootfs download → SHA-256 verify → hardened extract →
- *    configure (DNS/APT/hosts) → apt tools → Node.js → smoke test → READY.
+ *    configure (DNS/APT/hosts) → apt update → smoke test → READY. The CORE
+ *    install is deliberately minimal (v0.1.15: users reported "the install
+ *    runs too many things, not just the basic Ubuntu") — developer tools
+ *    (git, python3, node, …) are opt-in via [installDevTools].
+ *  - [installDevTools]: opt-in apt tools + Node.js 20 (idempotent, needs READY).
  *  - [repair]: re-verify/re-extract over the existing rootfs (keeps /root),
  *    `apt-get -f install`, smoke test.
- *  - [update]: apt update + upgrade + tools re-check.
+ *  - [update]: apt update + upgrade.
  *  - [export]: pack the whole rootfs into a user-picked .tar.gz backup.
  *  - [import]: restore a .tar.gz backup into a fresh, validated rootfs.
  *  - [reset]: delete the rootfs and cached tarballs.
@@ -59,8 +63,12 @@ class ErrorInfoException(val info: ErrorInfo) : Exception(info.detail)
  *
  * Status is persisted to `ubuntu_status.json` on every transition; busy states
  * found at app start are coerced to ERROR ("interrupted") — the app never
- * pretends a killed download is still running. Every step streams into [log]
- * (tail 300). UI only talks to this class through AppGraph (spec §17).
+ * pretends a killed download is still running. The same coercion is available
+ * at runtime via [clearStaleOperation] (called on every Ubuntu-screen entry):
+ * a CANCELLED operation (user navigates away mid-export — v0.1.14 report:
+ * after Export, Repair/Install were dead) previously left the busy state
+ * persisted forever, silently disabling every button. Every step streams into
+ * [log] (tail 300). UI only talks to this class through AppGraph (spec §17).
  */
 class UbuntuRuntime(
     private val context: Context,
@@ -89,8 +97,10 @@ class UbuntuRuntime(
     val failureTail: StateFlow<List<String>> = _failureTail
 
     /**
-     * Optional post-install continuation (OpenCode install), wired by AppGraph.
-     * A hook failure keeps Ubuntu READY — it must never corrupt the runtime state.
+     * Optional post-install continuation, wired by AppGraph (currently NOT
+     * wired — v0.1.15 made the core install minimal: OpenCode/dev tools are
+     * installed on demand from their own screens). A hook failure keeps
+     * Ubuntu READY — it must never corrupt the runtime state.
      */
     var postInstallHook: (suspend () -> Unit)? = null
 
@@ -104,14 +114,23 @@ class UbuntuRuntime(
 
     init {
         // Coerce busy states from a killed app run into an honest ERROR.
-        val loaded = _status.value
-        if (loaded.state.busy) {
-            setState(
-                UbuntuState.ERROR,
-                "The previous operation was interrupted when the app was killed — use Repair or Reset.",
-                0,
-            )
-        }
+        clearStaleOperation(
+            "The previous operation was interrupted when the app was killed — use Repair or Reset.",
+        )
+    }
+
+    /**
+     * Heals a persisted busy state that no live pipeline backs (pure decision
+     * in [healState], JVM-tested). v0.1.14 bug this fixes: navigating away
+     * during Export/Import/Install cancelled the composing scope mid-op and
+     * left the busy state persisted — every button on the Ubuntu screen was
+     * silently disabled ("after export I can't repair or install anymore").
+     * Called on every Ubuntu-screen entry; a running operation is never touched.
+     */
+    fun clearStaleOperation(reason: String = "The previous operation was interrupted — use Repair or Reset.") {
+        val st = _status.value
+        val healed = healState(st.state, pipelineRunning.get())
+        if (healed != null) setState(healed, reason, 0)
     }
 
     /** The device's primary ABI (drives rootfs/proot/Node downloads). */
@@ -199,7 +218,16 @@ class UbuntuRuntime(
         }
     }
 
-    private suspend fun runPipeline(repair: Boolean): Result<Unit> {
+    private suspend fun runPipeline(repair: Boolean): Result<Unit> = try {
+        runPipelineInner(repair)
+    } catch (e: CancellationException) {
+        // v0.1.15 cancel-safety: a cancelled pipeline must not leave a busy
+        // state persisted (it disabled every button until the app restart).
+        setState(UbuntuState.ERROR, "The operation was interrupted — use Repair or Reset.", 0)
+        throw e
+    }
+
+    private suspend fun runPipelineInner(repair: Boolean): Result<Unit> {
         val arch = try {
             RootfsCatalog.ubuntuArchForAbi(abi())
         } catch (e: IllegalArgumentException) {
@@ -319,49 +347,39 @@ class UbuntuRuntime(
         setState(UbuntuState.CONFIGURING, "Ensuring the proot binary…", 76)
         proot.ensureProot().getOrElse { return failStep("proot download failed", it) }
 
-        // ---- INSTALLING_PACKAGES (real apt run, streamed to the log) ----
-        setState(UbuntuState.INSTALLING_PACKAGES, "Installing base packages (apt)…", 80)
+        // ---- INSTALLING_PACKAGES (apt-get update, streamed to the log) ----
+        // v0.1.15: the CORE install deliberately stops here. Installing the
+        // tool chain (curl/git/python3/node, plus the OpenCode npm chain that
+        // used to follow) made every install take 10+ minutes and look like
+        // "way more than the basic Ubuntu" (user report). Dev tools are now
+        // opt-in via [installDevTools]; OpenCode installs from its own screen.
+        setState(UbuntuState.INSTALLING_PACKAGES, "Refreshing package lists (apt-get update)…", 80)
         if (abi() == "x86_64") {
             divertLdconfig().getOrElse { return failStep("ldconfig bootstrap failed", it) }
         }
         runAptUpdate().getOrElse { return failStep("apt-get update failed", it) }
-        runChecked(
-            "DEBIAN_FRONTEND=noninteractive apt-get install -y " +
-                "curl ca-certificates xz-utils git python3 python3-pip wget procps sudo",
-        ).getOrElse { return failStep("apt-get install failed", it) }
         if (repair) {
             // Fix any broken partial state left over in the previous install.
             runChecked("DEBIAN_FRONTEND=noninteractive apt-get -f install -y")
                 .getOrElse { return failStep("apt-get -f install failed", it) }
         }
 
-        // ---- INSTALLING_TOOLS (idempotent re-check + verified Node.js) ----
-        setState(UbuntuState.INSTALLING_TOOLS, "Installing tools + Node.js…", 86)
-        installer.installTools(execStreamFn(), ::addLog).getOrElse { return failStep("Tool installation failed", it) }
-        installer.installNode(execStreamFn(), execFn(), ::addLog, abi())
-            .getOrElse { return failStep("Node.js installation failed", it) }
-
-        // ---- smoke test ----
+        // ---- smoke test (bash is the whole contract of the base rootfs) ----
         setState(UbuntuState.INSTALLING_TOOLS, "Running smoke test…", 95)
-        val smoke = runCommand("bash --version && git --version && python3 -V && node -v")
+        val smoke = runCommand("bash --version && uname -m")
         val smokeOut = smoke.getOrElse { return failStep("Smoke test failed", it) }
-        val smokeOk = smokeOut.contains("bash", ignoreCase = true) &&
-            smokeOut.contains("git version", ignoreCase = true) &&
-            smokeOut.contains("python", ignoreCase = true)
+        val smokeOk = smokeOut.contains("bash", ignoreCase = true)
         if (!smokeOk) {
             return failStep(
                 "Smoke test failed — unexpected tool output: ${smokeOut.lineSequence().firstOrNull()?.take(200) ?: "(empty)"}",
                 IllegalStateException("smoke mismatch"),
             )
         }
-        if (!smokeOut.contains("v20")) {
-            addLog("[warn] node -v did not report v20 — Node may be missing; OpenCode install will re-check")
-        }
 
         // ---- READY ----
         setState(
             UbuntuState.READY,
-            "Ubuntu ready",
+            "Ubuntu ready (basic userspace) — use “Install dev tools” for git/python/node",
             100,
         ) { current ->
             current.copy(
@@ -372,23 +390,23 @@ class UbuntuRuntime(
                 lastUpdated = System.currentTimeMillis(),
             )
         }
-        addLog("Ubuntu ${variant.codename} ($arch) is ready")
-
-        postInstallHook?.let { hook ->
-            try {
-                hook()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                addLog("[warn] post-install step failed: ${e.message ?: e.javaClass.simpleName}")
-                setState(UbuntuState.READY, "OpenCode not installed yet — install from Settings → OpenCode", 100)
-            }
-        }
+        addLog("Ubuntu ${variant.codename} ($arch) is ready — basic userspace; dev tools are opt-in")
         return Result.success(Unit)
     }
 
-    /** apt update + full upgrade + tools re-check (spec §4 "Update"). */
-    suspend fun update(): Result<Unit> {
+    /**
+     * apt update + full upgrade (spec §4 "Update"). v0.1.15: no longer
+     * re-installs the dev tools/Node — those are owned by [installDevTools],
+     * so "Update" stays what it says (package updates) and finishes fast.
+     */
+    suspend fun update(): Result<Unit> = try {
+        updateInner()
+    } catch (e: CancellationException) {
+        setState(UbuntuState.ERROR, "The update was interrupted — you can run Update again.", 0)
+        throw e
+    }
+
+    private suspend fun updateInner(): Result<Unit> {
         ensureReady().getOrElse { return Result.failure(it) }
         if (!pipelineRunning.compareAndSet(false, true)) {
             return Result.failure(
@@ -405,15 +423,70 @@ class UbuntuRuntime(
             runAptUpdate().getOrElse { return failStep("apt-get update failed", it) }
             runChecked("DEBIAN_FRONTEND=noninteractive apt-get -y upgrade")
                 .getOrElse { return failStep("apt-get upgrade failed", it) }
-            setState(UbuntuState.UPDATING, "Re-checking tools…", 70)
-            installer.installTools(execStreamFn(), ::addLog).getOrElse { return failStep("Tool re-check failed", it) }
-            installer.installNode(execStreamFn(), execFn(), ::addLog, abi())
-                .getOrElse { return failStep("Node.js re-check failed", it) }
             setState(
                 UbuntuState.READY,
                 "Ubuntu updated",
                 100,
             ) { current -> current.copy(lastUpdated = System.currentTimeMillis()) }
+            return Result.success(Unit)
+        } finally {
+            pipelineRunning.set(false)
+        }
+    }
+
+    /**
+     * Opt-in developer tool chain (v0.1.15, split out of the core install so
+     * "Install Ubuntu" means just the basic userspace): apt tools
+     * (curl, ca-certificates, xz-utils, git, python3 + pip, wget, procps,
+     * sudo) plus the SHA-verified Node.js 20 at /opt/node. Idempotent — safe
+     * to run again at any time (apt install -y is a no-op when current, Node
+     * is skipped when /opt/node/bin/node exists). Requires READY.
+     */
+    suspend fun installDevTools(): Result<Unit> = try {
+        installDevToolsInner()
+    } catch (e: CancellationException) {
+        setState(UbuntuState.ERROR, "The dev-tools installation was interrupted — run “Install dev tools” again.", 0)
+        throw e
+    }
+
+    private suspend fun installDevToolsInner(): Result<Unit> {
+        ensureReady().getOrElse { return Result.failure(it) }
+        if (!pipelineRunning.compareAndSet(false, true)) {
+            return Result.failure(
+                ErrorInfoException(Errors.ubuntuFailure("An Ubuntu operation is already running — wait for it to finish")),
+            )
+        }
+        try {
+            setState(UbuntuState.INSTALLING_PACKAGES, "Installing developer tools (apt)…", 20)
+            if (abi() == "x86_64") {
+                divertLdconfig().getOrElse { return failStep("ldconfig bootstrap failed", it) }
+            }
+            runAptUpdate().getOrElse { return failStep("apt-get update failed", it) }
+            runChecked(
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y " +
+                    "-o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 " +
+                    "curl ca-certificates xz-utils git python3 python3-pip wget procps sudo",
+            ).getOrElse { return failStep("apt-get install failed", it) }
+            setState(UbuntuState.INSTALLING_TOOLS, "Installing Node.js…", 70)
+            installer.installNode(execStreamFn(), execFn(), ::addLog, abi())
+                .getOrElse { return failStep("Node.js installation failed", it) }
+            setState(UbuntuState.INSTALLING_TOOLS, "Verifying the tools…", 90)
+            val smoke = runCommand("git --version && python3 -V && node -v")
+            val smokeOut = smoke.getOrElse { return failStep("Tool verification failed", it) }
+            val ok = smokeOut.contains("git version", ignoreCase = true) &&
+                smokeOut.contains("python", ignoreCase = true) &&
+                smokeOut.contains("v20", ignoreCase = true)
+            if (!ok) {
+                return failStep(
+                    "Tool verification failed — unexpected output: " +
+                        (smokeOut.lineSequence().firstOrNull()?.take(200) ?: "(empty)"),
+                    IllegalStateException("dev tools smoke mismatch"),
+                )
+            }
+            setState(UbuntuState.READY, "Developer tools installed (git, python3, node 20, curl, wget, sudo)", 100) {
+                current -> current.copy(lastUpdated = System.currentTimeMillis())
+            }
+            addLog("Developer tools ready: git, python3 + pip, node 20, curl, wget, sudo, procps")
             return Result.success(Unit)
         } finally {
             pipelineRunning.set(false)
@@ -434,6 +507,8 @@ class UbuntuRuntime(
                 ErrorInfoException(Errors.ubuntuFailure("An Ubuntu operation is already running — wait for it to finish")),
             )
         }
+        // Captured BEFORE the busy state is set — the cancel handler restores it.
+        val prevState = _status.value.state
         try {
             val rootfs = rootfsDir()
             if (!File(rootfs, "bin/bash").isFile) {
@@ -467,7 +542,6 @@ class UbuntuRuntime(
                 "Export complete: ${stats.files} files, ${stats.dirs} dirs, ${stats.symlinks} symlinks, " +
                     "${stats.skippedSpecial} special entries skipped (${stats.bytes / MB} MB content)",
             )
-            val prevState = _status.value.state
             setState(
                 if (prevState == UbuntuState.READY) UbuntuState.READY else prevState,
                 "Userspace exported — keep this archive safe, Import restores it exactly",
@@ -475,6 +549,10 @@ class UbuntuRuntime(
             )
             return Result.success(Unit)
         } catch (e: CancellationException) {
+            // v0.1.15 cancel-safety: navigating away mid-export used to leave
+            // the busy EXPORTING state persisted forever (every button dead).
+            val restore = if (prevState.busy) UbuntuState.ERROR else prevState
+            setState(restore, "Export interrupted — the userspace was not modified", 0)
             throw e
         } catch (e: Exception) {
             return failStep("Export failed", e)
@@ -621,6 +699,7 @@ class UbuntuRuntime(
             addLog("Import complete — Ubuntu userspace restored (${arch ?: "arch unknown"})")
             return Result.success(Unit)
         } catch (e: CancellationException) {
+            setState(UbuntuState.ERROR, "The import was interrupted — run Import again to restore the userspace", 0)
             throw e
         } catch (e: SecurityException) {
             return failStep("Malicious archive entry rejected", e)
@@ -660,7 +739,10 @@ class UbuntuRuntime(
             setState(UbuntuState.NOT_INSTALLED, "Ubuntu userspace removed — install again to use terminals/exec", 0)
             return Result.success(Unit)
         } catch (e: Exception) {
-            if (e is CancellationException) throw e
+            if (e is CancellationException) {
+                setState(UbuntuState.ERROR, "The reset was interrupted — run Reset again to finish deleting the userspace", 0)
+                throw e
+            }
             return failStep("Reset failed", e)
         } finally {
             pipelineRunning.set(false)
@@ -719,6 +801,8 @@ class UbuntuRuntime(
             )
             return Result.success(Unit)
         } catch (e: CancellationException) {
+            val restore = if (prevState.busy) UbuntuState.ERROR else prevState
+            setState(restore, "Base export interrupted — the cache was not modified", 0)
             throw e
         } catch (e: Exception) {
             return failStep("Export base failed", e)
@@ -1280,5 +1364,15 @@ class UbuntuRuntime(
 
         /** Output lines kept for failure diagnosis in [mapProotFailure]. */
         const val TAIL_LINES = 40
+
+        /**
+         * Pure heal decision (JVM-tested): a persisted busy state with NO live
+         * pipeline must be coerced to ERROR ("interrupted") — otherwise every
+         * button on the Ubuntu screen stays disabled forever (v0.1.14 bug:
+         * navigating away mid-export cancelled the op but left EXPORTING
+         * persisted). Returns null when nothing needs healing.
+         */
+        fun healState(state: UbuntuState, pipelineRunning: Boolean): UbuntuState? =
+            if (state.busy && !pipelineRunning) UbuntuState.ERROR else null
     }
 }

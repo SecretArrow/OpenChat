@@ -106,7 +106,7 @@ fun WorkspaceScreen(nav: NavHostController) {
                     "A workspace is a project directory under /root/workspaces inside the " +
                         "Ubuntu userspace. OpenCode runs inside the current workspace. Tap + to create one.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         } else {
@@ -143,14 +143,14 @@ fun WorkspaceScreen(nav: NavHostController) {
                                 w.path,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = FontFamily.Monospace,
-                                color = MaterialTheme.colorScheme.outline,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
                                 summary(w),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.outline,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 TextButton(onClick = { editTarget = w }) { Text("Edit") }

@@ -117,8 +117,12 @@ object AppGraph {
             ProotRunner(appContext, settings),
             UbuntuInstaller(appContext),
         )
-        // §3–4: after Ubuntu install completes, best-effort install OpenCode CLI.
-        runtime.postInstallHook = { opencode.install() }
+        // v0.1.15: postInstallHook is intentionally NOT wired anymore. The
+        // core Ubuntu install is minimal (basic userspace only); auto-chaining
+        // OpenCode (npm + Node.js download) right after it made every install
+        // take 10+ minutes and do "way more than the basic Ubuntu" (user
+        // report). OpenCode installs on demand from its own screen —
+        // OpenCodeInstaller handles Node.js itself when needed.
         // Reset must close live sessions before the rootfs is deleted.
         runtime.onReset = { terminal.closeAll() }
         runtime

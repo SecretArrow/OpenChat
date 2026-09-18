@@ -82,7 +82,7 @@ fun SecurityScreen(nav: NavHostController) {
                             "screen, never written to preferences/JSON files and never logged. " +
                             "Only secret ids are listed here.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -92,7 +92,7 @@ fun SecurityScreen(nav: NavHostController) {
                 Text(
                     "No providers configured.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             providers.forEach { p ->
@@ -109,7 +109,7 @@ fun SecurityScreen(nav: NavHostController) {
                             if (hasKey) "••••••••••••  (set)" else "(not set)",
                             style = MaterialTheme.typography.bodySmall,
                             fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.outline,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     if (hasKey) {
@@ -127,7 +127,7 @@ fun SecurityScreen(nav: NavHostController) {
                 Text(
                     "No custom secrets stored.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             secretIds.forEach { id ->
@@ -144,7 +144,7 @@ fun SecurityScreen(nav: NavHostController) {
                     Text(
                         "••••••••••••",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     IconButton(onClick = {
                         AppGraph.secrets.delete(id)

@@ -24,6 +24,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,6 +69,12 @@ fun UbuntuScreen(nav: NavHostController) {
 
     val blocked = status.state.busy || working
 
+    // v0.1.15 self-heal: a busy state persisted by a cancelled/killed
+    // operation (v0.1.14 bug: "after export I can't repair or install") is
+    // coerced to an honest ERROR the moment this screen opens — the buttons
+    // come back without an app restart. A live operation is never touched.
+    LaunchedEffect(Unit) { AppGraph.ubuntu.clearStaleOperation() }
+
     fun toast(msg: String) {
         android.widget.Toast.makeText(AppGraph.appContext, msg, android.widget.Toast.LENGTH_LONG).show()
     }
@@ -76,11 +83,16 @@ fun UbuntuScreen(nav: NavHostController) {
         if (blocked) return
         scope.launch {
             working = true
-            action().fold(
-                { toast("$label completed") },
-                { toast("$label failed: ${it.message ?: "unknown error"}") },
-            )
-            working = false
+            try {
+                action().fold(
+                    { toast("$label completed") },
+                    { toast("$label failed: ${it.message ?: "unknown error"}") },
+                )
+            } finally {
+                // v0.1.15: `working` used to stick on a cancelled operation,
+                // silently disabling every button on this screen.
+                working = false
+            }
         }
     }
 
@@ -207,13 +219,13 @@ fun UbuntuScreen(nav: NavHostController) {
                             it,
                             style = MaterialTheme.typography.bodySmall,
                             fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.outline,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Text(
                         "Last updated: ${formatDate(status.lastUpdated)}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     status.message?.let {
                         Text(it, style = MaterialTheme.typography.bodySmall)
@@ -256,6 +268,32 @@ fun UbuntuScreen(nav: NavHostController) {
                 ) { Text("Reset", color = MaterialTheme.colorScheme.error) }
             }
 
+            // v0.1.15: the core install is deliberately minimal (basic Ubuntu
+            // userspace). Developer tools — git, python3 + pip, node 20, curl,
+            // wget, sudo — are an explicit, idempotent opt-in.
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Developer tools",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedButton(
+                            onClick = { op("Dev tools install") { AppGraph.ubuntu.installDevTools() } },
+                            enabled = !blocked && status.installed,
+                        ) { Text("Install dev tools") }
+                    }
+                    Text(
+                        "Optional. Installs git, python3 + pip, Node.js 20, curl, wget, sudo and " +
+                            "process tools into the basic userspace — needed for OpenCode and coding " +
+                            "workspaces. Safe to run again at any time; already-installed tools are kept.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
             // Diagnostics: honest environment report (space, proot, tmp dir,
             // RAM, DNS, apt sources) — the tool for every "why did apt fail".
             Card(Modifier.fillMaxWidth()) {
@@ -270,8 +308,11 @@ fun UbuntuScreen(nav: NavHostController) {
                             onClick = {
                                 scope.launch {
                                     runningDiagnostics = true
-                                    diagnosticsReport = AppGraph.ubuntu.diagnostics()
-                                    runningDiagnostics = false
+                                    try {
+                                        diagnosticsReport = AppGraph.ubuntu.diagnostics()
+                                    } finally {
+                                        runningDiagnostics = false
+                                    }
                                 }
                             },
                             enabled = !blocked && !runningDiagnostics,
@@ -281,7 +322,7 @@ fun UbuntuScreen(nav: NavHostController) {
                         "Checks free space as seen by the app, the proot binary, " +
                             "PROOT_TMP_DIR writability, RAM, DNS and APT sources inside the rootfs.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     diagnosticsReport?.let { report ->
                         Text(
@@ -312,9 +353,10 @@ fun UbuntuScreen(nav: NavHostController) {
                             "is currently installed. A raw ubuntu-base tarball downloaded from " +
                             "cdimage.ubuntu.com is also accepted: OpenChat detects it and writes " +
                             "DNS + APT sources automatically. Export also works when Ubuntu is " +
-                            "broken, so you can back up before a Reset.",
+                            "broken, so you can back up before a Reset. Keep this screen open " +
+                            "until the export finishes — leaving the screen cancels it safely.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
@@ -341,7 +383,7 @@ fun UbuntuScreen(nav: NavHostController) {
                             "app cache — move it to another device or keep it for offline reinstall " +
                             "(Import accepts it directly, no download needed).",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     OutlinedButton(
                         onClick = { exportBaseLauncher.launch("openchat-ubuntu-base.tar.gz") },

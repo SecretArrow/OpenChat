@@ -17,6 +17,10 @@ private val DarkScheme = darkColorScheme(
     surface = DarkSurface,
     onSurface = DarkOnSurface,
     surfaceVariant = DarkSurfaceVariant,
+    // v0.1.15: muted text must be a TEXT color (≥ 4.5:1), not the border
+    // color — "outline" was previously used for secondary text in ~50 places
+    // and measured 1.69:1 (unreadable; the Settings contrast bug).
+    onSurfaceVariant = DarkOnSurfaceVariant,
     outline = DarkOutline,
 )
 
@@ -31,6 +35,7 @@ private val LightScheme = lightColorScheme(
     surface = LightSurface,
     onSurface = LightOnSurface,
     surfaceVariant = LightSurfaceVariant,
+    onSurfaceVariant = LightOnSurfaceVariant,
     outline = LightOutline,
 )
 

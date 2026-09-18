@@ -38,7 +38,7 @@ SETTLE = 3
 STAGES = [
     "ENVIRONMENT", "APK_INSTALL", "APP_LAUNCH", "NAVIGATE",
     "INSTALL_START", "DOWNLOAD", "CHECKSUM_VERIFY", "EXTRACT", "ROOTFS_VERIFY",
-    "APT", "TMP_WRITE", "UBUNTU_BOOT", "SHELL", "DNS_HTTP", "TERMINAL_UI",
+    "DEV_TOOLS", "APT", "TMP_WRITE", "UBUNTU_BOOT", "SHELL", "DNS_HTTP", "TERMINAL_UI",
     "LIFECYCLE_INTERFERENCE", "PERSISTENCE", "APP_RESTART", "PERSISTENCE_AFTER_RESTART",
 ]
 
@@ -942,7 +942,34 @@ class E2E:
             self.fail("SHELL", f"/etc/os-release does not identify Ubuntu:\n{osr[:400]}")
         self.stages["SHELL"].pass_("os-release identifies Ubuntu")
 
-        # APT — the app's install pipeline ran apt-get update + install; prove it
+        # DEV_TOOLS — v0.1.15 made the core install minimal (basic userspace
+        # only, apt-get update + bash smoke). The tool chain (git, python3,
+        # node) is now an explicit opt-in: drive the REAL button on the Ubuntu
+        # screen and wait for the runtime to report READY again. The APT stage
+        # below then proves the tools actually landed in the rootfs.
+        nav_settings(self.adb)
+        if not find_tap(self.adb, ["ubuntu userspace"], scroll=False):
+            self.fail("DEV_TOOLS", "could not open the Ubuntu userspace screen from Settings")
+        if not find_tap(self.adb, ["install dev tools"], scroll=False):
+            self.fail("DEV_TOOLS", "'Install dev tools' button not found on the Ubuntu screen")
+        deadline = time.time() + 1200
+        state = ""
+        while time.time() < deadline:
+            time.sleep(10)
+            st = self.record_state("devtools-poll")
+            state = (st.get("state") or "").upper()
+            if state in {"READY", "ERROR"}:
+                break
+        if state != "READY":
+            self.fail(
+                "DEV_TOOLS",
+                f"dev-tools install ended in {state or 'UNKNOWN'} state:\n{(st.get('message') or '')[:500]}",
+            )
+        self.stages["DEV_TOOLS"].pass_(
+            f"'Install dev tools' button drove the opt-in tool chain to READY: {(st.get('message') or '')[:160]}"
+        )
+
+        # APT — the dev-tools pipeline ran apt-get update + install; prove it
         aptv = self.inroot_cmd("apt --version 2>&1 | head -1 && git --version && python3 -V")
         # Case-insensitive: `python3 -V` prints "Python 3.8.10" (capital P) — a
         # case-sensitive "python" needle false-failed a fully green output.

@@ -179,7 +179,7 @@ private fun ModelMenuItem(
                 Text(
                     "${model.modelName} · $providerName",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },

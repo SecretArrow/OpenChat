@@ -92,7 +92,7 @@ fun ProcessManagerScreen(nav: NavHostController) {
                         "Runs in " +
                             (currentWorkspace?.let { "\"${it.name}\" (${it.path})" } ?: "/root (no workspace selected)"),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         OutlinedTextField(
@@ -136,7 +136,7 @@ fun ProcessManagerScreen(nav: NavHostController) {
                     "Nothing running. Start a dev server (e.g. \"python3 -m http.server 8000\"), " +
                         "a watcher or any long-running command above.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
                 processes.forEach { p ->
@@ -163,7 +163,7 @@ fun ProcessManagerScreen(nav: NavHostController) {
                         "If Android kills the app they are terminated — on next start they show as " +
                         "EXITED with an honest note; Open Chat cannot resurrect them.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(12.dp),
                 )
             }
@@ -232,7 +232,7 @@ private fun ProcessCard(
                     p.exitCode?.let { append(" · exit $it") }
                 },
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             p.note?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)

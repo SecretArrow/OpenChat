@@ -99,7 +99,7 @@ fun ErrorCard(
                 Text(
                     "Possible causes:",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 info.causes.forEach { cause ->
                     Text("• $cause", style = MaterialTheme.typography.bodySmall)

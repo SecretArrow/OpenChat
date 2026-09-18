@@ -96,22 +96,29 @@ fun SettingsHomeScreen(nav: NavHostController) {
                 if (ubuntuBusy || ubuntuStatus.state.busy) return@UbuntuStatusCard
                 ubuntuBusy = true
                 scope.launch {
-                    action().fold(
-                        { toast("$label completed") },
-                        { toast("$label failed: ${it.message ?: "unknown error"}") },
-                    )
-                    ubuntuBusy = false
+                    try {
+                        action().fold(
+                            { toast("$label completed") },
+                            { toast("$label failed: ${it.message ?: "unknown error"}") },
+                        )
+                    } finally {
+                        // v0.1.15: never leave the busy flag stuck on cancel.
+                        ubuntuBusy = false
+                    }
                 }
             } }
             item { OpenCodeStatusCard(opencodeStatus, busy = opencodeBusy) { action ->
                 if (opencodeBusy) return@OpenCodeStatusCard
                 opencodeBusy = true
                 scope.launch {
-                    action().fold(
-                        { toast("OpenCode installed") },
-                        { toast("Install failed: ${it.message ?: "unknown error"}") },
-                    )
-                    opencodeBusy = false
+                    try {
+                        action().fold(
+                            { toast("OpenCode installed") },
+                            { toast("Install failed: ${it.message ?: "unknown error"}") },
+                        )
+                    } finally {
+                        opencodeBusy = false
+                    }
                 }
             } }
 
@@ -208,7 +215,7 @@ private fun BackupCard() {
                     "from an earlier backup. Import adds chats — existing ones are " +
                     "never deleted or overwritten.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = {
@@ -256,10 +263,10 @@ private fun UbuntuStatusCard(
             Text(
                 "Last updated: ${formatDate(status.lastUpdated)}",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             status.message?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (status.state.busy) {
                 LinearProgressIndicator(
@@ -311,7 +318,7 @@ private fun OpenCodeStatusCard(
                 fontFamily = FontFamily.Monospace,
             )
             status.message?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Button(
                 onClick = { onInstall { AppGraph.opencode.install() } },
@@ -332,6 +339,6 @@ private fun SettingsRow(label: String, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        Text("›", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.outline)
+        Text("›", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

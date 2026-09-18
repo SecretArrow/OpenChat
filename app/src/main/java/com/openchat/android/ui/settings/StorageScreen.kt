@@ -159,7 +159,7 @@ private fun StorageRow(
                 Text(
                     hint,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             if (busy) {

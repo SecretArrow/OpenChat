@@ -294,7 +294,7 @@ fun ChatScreen(onOpenTerminal: (() -> Unit)? = null) {
                                 "Agent mode — the AI runs commands inside the Ubuntu workspace. " +
                                     "Executed steps appear below as tool cards.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.outline,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.weight(1f),
                             )
                             if (onOpenTerminal != null) {
@@ -326,7 +326,7 @@ fun ChatScreen(onOpenTerminal: (() -> Unit)? = null) {
                                                 "Switch to Agent mode to let the AI run commands " +
                                                 "inside the Ubuntu workspace for you.",
                                             style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.outline,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                         Spacer(Modifier.size(10.dp))
                                         FlowRow(
@@ -570,7 +570,7 @@ private fun MessageRow(msg: ChatMessage) {
                     Text(
                         name?.let { "By $it" } ?: "",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
                     CopyIconButton(msg.content)
